@@ -1,5 +1,35 @@
 # AAI Harness Modification Log
 
+## Version `20260707T181000+0900`
+
+Timestamp timezone: Asia/Tokyo.
+
+### Changes
+
+- Added `agent-assisted/AAI_DEVELOPMENT_GUIDE.md` as the detailed development handoff document for future agents and developers.
+- The guide describes:
+  - project identity and active PR;
+  - why AAI exists;
+  - development target and non-goals;
+  - repository layout after AAI cleanup;
+  - module-by-module responsibilities;
+  - current CLI command surface;
+  - recommended current workflow;
+  - campaign / child / archive artifact contracts;
+  - required invariants;
+  - current development progress;
+  - partially implemented and missing features;
+  - recommended next tasks;
+  - known risks and caveats;
+  - coding style guidance;
+  - the reading order for future agents.
+- Linked the handoff guide from `agent-assisted/README.md` and `agent-assisted/AAI_HARNESS.md`.
+
+### Notes
+
+- This version is documentation-only. No runtime code was changed.
+- The goal is to let another agent take over the project without relying on previous chat context.
+
 ## Version `20260707T175500+0900`
 
 Timestamp timezone: Asia/Tokyo.
