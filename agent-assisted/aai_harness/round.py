@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
 from .archive import archive_evidence
 from .child_eval import EvalMode, run_child_evaluation
 from .gates import gate_evidence
-from .paths import resolve_project_path
 from .schemas import GateResult, now_version, write_json
 from .workspace import child_root, prepare_child_workspace
 
