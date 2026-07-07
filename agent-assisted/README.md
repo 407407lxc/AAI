@@ -12,6 +12,8 @@ agent skills, and the agent-assisted technical report.
 |-- report.pdf
 |-- scripts/
 |-- skills/
+|-- aai_harness/
+|-- AAI_HARNESS.md
 |-- moe_fp8_block_scale_ds_routing_topk8_ng8_kg4_e32_h7168_i2048/
 |-- gdn_decode_qk4_v8_d128_k_last/
 |-- gdn_prefill_qk4_v8_d128_k_last/
@@ -116,6 +118,24 @@ optimization and submission handling:
 
 For broader repository context and the autonomous full-agent package, see the
 top-level [README](../README.md).
+
+## Agentic AI Harness Workflow
+
+This fork adds an optional AAI harness layer under [`aai_harness/`](./aai_harness/) plus the design note [`AAI_HARNESS.md`](./AAI_HARNESS.md).
+
+The new layer wraps the existing `scripts/` evaluators instead of replacing them. It provides timestamp-versioned bootstrap baselines, child-run evidence schemas, archive gates, Master Campaign state, variant/failed-run archival, TRAPS / harness-ledger updates, and Mode 3 evidence-backed proposal review for harness changes.
+
+Run from this directory:
+
+```bash
+python -m aai_harness.cli --help
+```
+
+From the repository root:
+
+```bash
+PYTHONPATH=agent-assisted python -m aai_harness.cli --help
+```
 
 ## License
 
