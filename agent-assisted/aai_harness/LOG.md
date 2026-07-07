@@ -1,5 +1,22 @@
 # AAI Harness Modification Log
 
+## Version `20260707T173000+0900`
+
+Timestamp timezone: Asia/Tokyo.
+
+### Changes
+
+- Expanded `agent-assisted/aai_harness/README.md` into a full startup guide.
+- Added a Codex-backed AAI quick start from API-key export through Codex execution, evaluation, archive, campaign summary, memory update, and parent selection.
+- Added a complete command reference explaining `configure-codex`, `codex-status`, `start`, `bootstrap`, `prepare-child`, `write-codex-prompt`, `run-codex-agent`, `run-child-eval`, `run-child-round`, `diff-child`, `finalize-child`, `gate`, `archive`, `gate-archive`, `summarize-campaign`, `update-campaign-memory`, `select-parent`, `proposal-template`, and `review-proposal`.
+- Added explicit warning that `run-child-round` must use `--skip-prepare` after `run-codex-agent`, otherwise a prepared workspace may be recreated and the Codex candidate can be overwritten.
+- Expanded `agent-assisted/README.md` with a short Codex-backed quick start and a concise command glossary that links to the detailed AAI harness README.
+
+### Notes
+
+- This version is documentation-only. No runtime code was changed.
+- The command flow now documents the safe Codex-backed path: configure, start, bootstrap, prepare child, run Codex, evaluate/archive with `--skip-prepare`, summarize, update memory, and select next parent.
+
 ## Version `20260707T172000+0900`
 
 Timestamp timezone: Asia/Tokyo.
