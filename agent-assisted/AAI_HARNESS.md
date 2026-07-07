@@ -18,9 +18,17 @@ This prevents reward hacking where a kernel-search agent modifies evaluator, bas
 | --- | --- |
 | Stage -1: requirement parsing / feasibility | `aai_harness.schemas.TaskSpec`, `aai_harness.bootstrap.resolve_task` |
 | Mode 0: build / deploy / first baseline | `aai_harness.bootstrap.bootstrap_baseline` |
-| Stage 1: bounded child optimization | `aai_harness.workspace`, `aai_harness.diffing`, `aai_harness.child_eval`, evidence schema in `aai_harness.schemas.EvidenceRecord`, gate checks in `aai_harness.gates` |
+| Stage 1: bounded child optimization | `aai_harness.workspace`, `aai_harness.diffing`, `aai_harness.child_eval`, `aai_harness.round`, evidence schema in `aai_harness.schemas.EvidenceRecord`, gate checks in `aai_harness.gates` |
 | Stage 2: Master Campaign | `aai_harness.campaign`, `aai_harness.archive`, `aai_harness.parent_selection` |
 | Mode 3: evidence-backed harness proposal | `aai_harness.proposal` |
+
+## Implemented in version `20260707T165028+0900`
+
+- Added `round.py` for one-command child round orchestration.
+- Added `run-child-round` CLI command.
+- The round command runs prepare, eval, gate, archive, and writes `round_report.json`.
+- Gate failures are preserved as failed evidence instead of disappearing.
+- The high-level command keeps low-level commands available for debugging.
 
 ## Implemented in version `20260707T164312+0900`
 
@@ -47,8 +55,8 @@ This prevents reward hacking where a kernel-search agent modifies evaluator, bas
 
 ## Next engineering steps
 
-1. Add one-command child round orchestration: prepare child, run selected evaluator, gate, and archive.
-2. Add parent selection using novelty and failure traps, not only latency metric.
-3. Add optional adapters for LoongFlow planner/executor outputs.
-4. Add CI checks that run the gate on sample evidence.
-5. Add campaign-level rollup summaries across children and archived variants.
+1. Add parent selection using novelty and failure traps, not only latency metric.
+2. Add optional adapters for LoongFlow planner/executor outputs.
+3. Add CI checks that run the gate on sample evidence.
+4. Add campaign-level rollup summaries across children and archived variants.
+5. Add promotion helpers that copy a gated variant into an explicit release candidate directory.
