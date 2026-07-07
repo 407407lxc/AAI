@@ -6,6 +6,7 @@ from pathlib import Path
 from .archive import archive_evidence, gate_and_archive
 from .bootstrap import bootstrap_baseline, resolve_task
 from .campaign import init_campaign, write_round_prompt
+from .child_eval import run_child_evaluation
 from .gates import gate_evidence, write_gate_result
 from .parent_selection import select_parent
 from .paths import ensure_aai_layout
@@ -38,6 +39,19 @@ def cmd_prepare_child(args: argparse.Namespace) -> None:
         solution_dir=args.solution_dir,
         parent_id=args.parent_id,
         version=args.version,
+    )
+    print(path)
+
+
+def cmd_run_child_eval(args: argparse.Namespace) -> None:
+    path = run_child_evaluation(
+        args.campaign_id,
+        args.child_id,
+        mode=args.mode,
+        workers=args.workers,
+        timeout=args.timeout,
+        retry=args.retry,
+        finalize=args.finalize,
     )
     print(path)
 
@@ -143,6 +157,16 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--parent-id", default="baseline")
     p.add_argument("--version")
     p.set_defaults(func=cmd_prepare_child)
+
+    p = sub.add_parser("run-child-eval", help="run pack/local/modal-full evaluator against a child workspace")
+    p.add_argument("--campaign-id", required=True)
+    p.add_argument("--child-id", required=True)
+    p.add_argument("--mode", choices=["pack", "local", "modal-full"], default="pack")
+    p.add_argument("--workers", type=int, default=10)
+    p.add_argument("--timeout", type=int, default=3600)
+    p.add_argument("--retry", action="store_true")
+    p.add_argument("--no-finalize", action="store_false", dest="finalize")
+    p.set_defaults(func=cmd_run_child_eval, finalize=True)
 
     p = sub.add_parser("diff-child", help="capture diff.patch between child parent snapshot and candidate workspace")
     p.add_argument("--campaign-id", required=True)
