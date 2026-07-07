@@ -1,5 +1,23 @@
 # AAI Harness Modification Log
 
+## Version `20260707T165028+0900`
+
+Timestamp timezone: Asia/Tokyo.
+
+### Changes
+
+- Added `round.py` for one-command child round orchestration.
+- Added `run-child-round` CLI command.
+- `run-child-round` executes: prepare child workspace, run selected evaluator, gate evidence, archive evidence, and write `round_report.json`.
+- Added `ChildRoundReport` schema for recording requested archive kind, final archive kind, gate status, evidence path, diff path, archive manifest, and notes.
+- Gate failures are archived as failed evidence when the requested archive kind is `variant`.
+- Updated README and design plan documentation to make `run-child-round` the high-level workflow entry point while preserving lower-level commands for debugging.
+
+### Notes
+
+- `pack` mode remains a smoke test and normally archives as failed evidence when requested as a variant, because full benchmark evidence is required for promotion.
+- `modal-full` is the intended mode for promotion-quality child round evidence.
+
 ## Version `20260707T164312+0900`
 
 Timestamp timezone: Asia/Tokyo.
