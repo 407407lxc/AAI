@@ -1,5 +1,33 @@
 # AAI Harness Modification Log
 
+## Version `20260707T172000+0900`
+
+Timestamp timezone: Asia/Tokyo.
+
+### Changes
+
+- Added `runtime_logging.py` for detailed runtime traces:
+  - append-only `runtime_trace.jsonl` event stream;
+  - redacted `environment.json` platform/environment snapshots;
+  - command start/end events with return codes and durations;
+  - per-command stdout/stderr artifacts under `commands/`.
+- Added `codex_adapter.py` for OpenAI Codex CLI support as the first AAI child-agent backend.
+- Added `.aai/codex_config.json` configuration support via `configure-codex`.
+- Added Codex-related CLI commands:
+  - `configure-codex`;
+  - `codex-status`;
+  - `write-codex-prompt`;
+  - `run-codex-agent`.
+- Added `start.py` and `start` CLI command for initializing an AAI campaign and optionally configuring Codex in one step.
+- `run-codex-agent` invokes Codex non-interactive mode, captures JSONL/stdout/stderr/final-message artifacts, and writes `codex_agent_run.json`.
+- Updated `run-child-eval` to emit detailed runtime traces and redacted environment snapshots for pack/local/modal evaluator commands.
+- Updated README and design plan documentation for Codex adapter setup and runtime debugging.
+
+### Notes
+
+- API keys are never written to config files or logs. AAI stores only the configured environment variable name, such as `CODEX_API_KEY`.
+- The default adapter command is `codex exec --sandbox workspace-write --model <model> --json --ephemeral ...`; use `--command-template` if your installed Codex CLI version uses different flags.
+
 ## Version `20260707T171000+0900`
 
 Timestamp timezone: Asia/Tokyo.
