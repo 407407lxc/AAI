@@ -7,7 +7,7 @@ This document records how the draw.io workflow maps onto the repository implemen
 AAI separates kernel search from harness governance:
 
 - **Child worker**: edits a bounded candidate workspace, normally only `solution/`, and emits evidence.
-- **Master campaign**: selects parents, writes narrow prompts, evaluates evidence, archives variants/failures, updates long-term memory, and decides whether the next round should continue.
+- **Master campaign**: selects parents, writes narrow prompts, evaluates evidence, archives variants/failures, updates long-term memory, summarizes campaign state, and decides whether the next round should continue.
 - **Mode 3 proposal review**: allows harness changes only when repeated evidence shows a tooling gap.
 
 This prevents reward hacking where a kernel-search agent modifies evaluator, baseline, scoring, or archive memory to make itself look better.
@@ -19,8 +19,16 @@ This prevents reward hacking where a kernel-search agent modifies evaluator, bas
 | Stage -1: requirement parsing / feasibility | `aai_harness.schemas.TaskSpec`, `aai_harness.bootstrap.resolve_task` |
 | Mode 0: build / deploy / first baseline | `aai_harness.bootstrap.bootstrap_baseline` |
 | Stage 1: bounded child optimization | `aai_harness.workspace`, `aai_harness.diffing`, `aai_harness.child_eval`, `aai_harness.round`, evidence schema in `aai_harness.schemas.EvidenceRecord`, gate checks in `aai_harness.gates` |
-| Stage 2: Master Campaign | `aai_harness.campaign`, `aai_harness.archive`, `aai_harness.parent_selection` |
+| Stage 2: Master Campaign | `aai_harness.campaign`, `aai_harness.archive`, `aai_harness.parent_selection`, `aai_harness.summary` |
 | Mode 3: evidence-backed harness proposal | `aai_harness.proposal` |
+
+## Implemented in version `20260707T170312+0900`
+
+- Added `summary.py` for campaign rollup.
+- Added `summarize-campaign` CLI command.
+- The summary command reads all child `round_report.json` files under a campaign.
+- It writes `campaign_summary.json` for machine-readable state and `campaign_summary.md` for human review.
+- It reports child counts, gate pass counts, archive-kind counts, status/mode counts, repeated gate failure codes, best child by metric, and recommended next steps.
 
 ## Implemented in version `20260707T165028+0900`
 
@@ -58,5 +66,5 @@ This prevents reward hacking where a kernel-search agent modifies evaluator, bas
 1. Add parent selection using novelty and failure traps, not only latency metric.
 2. Add optional adapters for LoongFlow planner/executor outputs.
 3. Add CI checks that run the gate on sample evidence.
-4. Add campaign-level rollup summaries across children and archived variants.
-5. Add promotion helpers that copy a gated variant into an explicit release candidate directory.
+4. Add promotion helpers that copy a gated variant into an explicit release candidate directory.
+5. Add campaign memory updates that append summary findings into `harness-ledger.md` and `TRAPS.md`.
