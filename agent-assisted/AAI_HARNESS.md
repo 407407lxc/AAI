@@ -4,6 +4,8 @@ This document records how the user-designed draw.io workflow maps onto the repos
 
 For a detailed handoff to future agents, including project goals, module responsibilities, current progress, known risks, and recommended next tasks, read [`AAI_DEVELOPMENT_GUIDE.md`](./AAI_DEVELOPMENT_GUIDE.md).
 
+For the exact full-agent-style trace mirror implemented in AAI, read [`AAI_FULL_AGENT_STYLE.md`](./AAI_FULL_AGENT_STYLE.md).
+
 ## Design correction: LoongFlow-style structure, AAI-defined workflow
 
 AAI should not be a prompt-only Codex wrapper. The intended design is closer to the original full-agent architecture:
@@ -19,6 +21,7 @@ But AAI replaces the workflow semantics and implementation details with the user
 - Codex / Claude Code / LoongFlow-compatible backends are executor nodes, not global controllers.
 - Evaluator, gate, archive, campaign summary, memory, TRAPS, and population checkpoints are AAI-controlled.
 - Failed attempts become negative evidence.
+- AAI can now mirror its artifacts into the original full-agent-style trace layout for audit and handoff.
 
 ## Core principle
 
@@ -30,6 +33,7 @@ AAI separates workflow governance from agent execution:
 - **Evaluator gate**: pack/local/Modal evaluator plus AAI archive gates decide promotion.
 - **Summarizer / memory**: campaign summaries and `harness-ledger.md` / `TRAPS.md` feed later rounds.
 - **Population database**: admits variants and failures into checkpointed lineage memory.
+- **Full-agent-style trace mirror**: exports planner/executor/evaluator/summarizer/checkpoint artifacts into a familiar LoongFlow-style directory schema.
 - **Mode 3 proposal review**: allows harness changes only when repeated evidence shows a tooling gap.
 
 This prevents reward hacking where a kernel-search agent modifies evaluator, baseline, scoring, or archive memory to make itself look better.
@@ -41,9 +45,16 @@ This prevents reward hacking where a kernel-search agent modifies evaluator, bas
 | Stage -1: requirement parsing / feasibility | `aai_harness.schemas.TaskSpec`, `aai_harness.bootstrap.resolve_task`, `aai_harness.start`, `aai_harness.workflow` |
 | Mode 0: build / deploy / first baseline | `aai_harness.bootstrap.bootstrap_baseline`, workflow action `bootstrap_baseline` |
 | Stage 1: bounded child optimization | `aai_harness.planner`, `aai_harness.workspace`, `aai_harness.codex_adapter`, `aai_harness.diffing`, `aai_harness.child_eval`, evidence schema in `aai_harness.schemas.EvidenceRecord`, gate checks in `aai_harness.gates` |
-| Stage 2: Master Campaign | `aai_harness.campaign`, `aai_harness.archive`, `aai_harness.parent_selection`, `aai_harness.summary`, `aai_harness.memory`, `aai_harness.population` |
+| Stage 2: Master Campaign | `aai_harness.campaign`, `aai_harness.archive`, `aai_harness.parent_selection`, `aai_harness.summary`, `aai_harness.memory`, `aai_harness.population`, `aai_harness.full_agent_trace` |
 | Runtime debugging | `aai_harness.runtime_logging` |
 | Mode 3: evidence-backed harness proposal | `aai_harness.proposal`, workflow action `review_proposal` |
+
+## Implemented in version `20260707T182500+0900`
+
+- Added `full_agent_trace.py` for mirroring AAI artifacts into the original full-agent-style trace schema.
+- Added `full_agent_trace_cli.py` with `init`, `sync`, `status`, and `tree` commands.
+- Added `AAI_FULL_AGENT_STYLE.md` documenting how AAI imitates the original `full-agent/` trace layout while keeping AAI workflow artifacts authoritative.
+- The mirror writes under `.aai/campaigns/<campaign_id>/full_agent_trace/` with `database/checkpoints`, `iteration/<K>/planner`, `iteration/<K>/executor/<child_id>`, `iteration/<K>/summarizer`, and `evaluator/eval_<hash>` subtrees.
 
 ## Implemented in version `20260707T181000+0900`
 
@@ -68,18 +79,9 @@ This prevents reward hacking where a kernel-search agent modifies evaluator, bas
 - Rewrote root and package README files as AAI-only.
 - Preserved evaluator scripts because AAI still calls them.
 
-## Implemented in version `20260707T172000+0900`
-
-- Added `runtime_logging.py` for detailed JSONL runtime traces, redacted environment snapshots, command start/end events, durations, return codes, and stdout/stderr artifacts.
-- Added `codex_adapter.py` for Codex CLI configuration and execution.
-- Added `start.py` for AAI campaign start with optional Codex configuration.
-- Added CLI commands: `start`, `configure-codex`, `codex-status`, `write-codex-prompt`, and `run-codex-agent`.
-- `configure-codex` stores model name, Codex binary, sandbox mode, timeout, and the API-key environment variable name in `.aai/codex_config.json`; it does not store the secret value.
-- `run-codex-agent` runs `codex exec` against a prepared child workspace, writes `codex_agent_run.json`, captures Codex JSONL/stdout/stderr, and writes a final message artifact.
-- `run-child-eval` writes runtime traces and redacted environment snapshots for pack/local/modal evaluator commands.
-
 ## Earlier implemented layers
 
+- `20260707T172000+0900`: Codex CLI adapter and detailed runtime logging.
 - `20260707T171000+0900`: campaign memory updates into `harness-ledger.md` and `TRAPS.md`.
 - `20260707T170312+0900`: campaign summary rollup.
 - `20260707T165028+0900`: one-command child round orchestration.
@@ -97,7 +99,7 @@ This prevents reward hacking where a kernel-search agent modifies evaluator, bas
 ## Next engineering steps
 
 1. Add a guarded `workflow-run` command that executes allowed actions end-to-end from the current workflow state.
-2. Add `run-agent-round` on top of the hard workflow: plan, prepare, run executor, evaluate, gate, summarize, memory, population admit, select parent.
+2. Add `run-agent-round` on top of the hard workflow: plan, prepare, run executor, evaluate, gate, summarize, memory, population admit, full-agent-style trace sync, select parent.
 3. Add novelty/failure-aware parent selection from `population.py`, not only latency.
 4. Add optional Claude Code and LoongFlow-compatible executor/planner adapters.
-5. Add CI checks that validate workflow transitions and sample evidence gates.
+5. Add CI checks that validate workflow transitions, sample evidence gates, and full-agent-style trace completeness.
