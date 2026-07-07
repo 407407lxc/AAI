@@ -67,4 +67,6 @@ def write_round_prompt(
         "",
         "A candidate is not promoted unless the Master Campaign gate accepts the evidence and the metric improves against the selected parent/baseline.",
     ])
-    return (prompt_dir / f"{round_id}.md").write_text("\n".join(body) + "\n", encoding="utf-8") or (prompt_dir / f"{round_id}.md")
+    output_path = prompt_dir / f"{round_id}.md"
+    output_path.write_text("\n".join(body) + "\n", encoding="utf-8")
+    return output_path
