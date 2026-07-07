@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import os
-import subprocess
 import sys
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Literal
 
 from .paths import PROJECT_ROOT
+from .runtime_logging import RuntimeLogger
 from .schemas import now_version, read_json, write_json
 from .workspace import child_root, finalize_child_evidence
 
@@ -21,6 +21,7 @@ class ChildEvalStep:
     returncode: int
     stdout_log: str
     stderr_log: str
+    duration_seconds: float | None = None
 
 
 @dataclass(slots=True)
@@ -39,28 +40,23 @@ def _run_step(
     name: str,
     command: list[str],
     log_dir: Path,
+    runtime: RuntimeLogger,
     timeout: int | None = None,
     env: dict[str, str] | None = None,
 ) -> ChildEvalStep:
-    proc = subprocess.run(
-        command,
-        cwd=str(PROJECT_ROOT),
-        text=True,
-        capture_output=True,
-        timeout=timeout,
-        env=env,
-    )
+    result = runtime.run_command(name, command, cwd=PROJECT_ROOT, timeout=timeout, env=env)
     log_dir.mkdir(parents=True, exist_ok=True)
     stdout_log = log_dir / f"{name}.stdout.log"
     stderr_log = log_dir / f"{name}.stderr.log"
-    stdout_log.write_text(proc.stdout or "", encoding="utf-8")
-    stderr_log.write_text(proc.stderr or "", encoding="utf-8")
+    stdout_log.write_text(Path(result.stdout_log).read_text(encoding="utf-8", errors="replace"), encoding="utf-8")
+    stderr_log.write_text(Path(result.stderr_log).read_text(encoding="utf-8", errors="replace"), encoding="utf-8")
     return ChildEvalStep(
         name=name,
         command=command,
-        returncode=proc.returncode,
+        returncode=result.returncode,
         stdout_log=str(stdout_log),
         stderr_log=str(stderr_log),
+        duration_seconds=result.duration_seconds,
     )
 
 
@@ -91,6 +87,8 @@ def run_child_evaluation(
     """
     root, paths = _workspace_paths(campaign_id, child_id)
     log_dir = root / "logs"
+    runtime = RuntimeLogger(root / "runtime" / f"eval-{now_version()}", run_id=f"{campaign_id}/{child_id}/eval")
+    runtime.write_environment_snapshot({"mode": mode, "workers": workers, "timeout": timeout, "retry": retry})
     packed_solution = root / "solution.json"
     benchmark_json = root / "benchmark_detailed_results.json"
     retained_log = root / "retained_run.log"
@@ -104,6 +102,8 @@ def run_child_evaluation(
             "benchmark_result_json": str(benchmark_json),
             "retained_log": str(retained_log),
             "result_json": str(root / "result.json"),
+            "runtime_trace": str(runtime.trace_path),
+            "environment_json": str(runtime.env_path),
         },
     )
 
@@ -117,7 +117,7 @@ def run_child_evaluation(
         "--output",
         str(packed_solution),
     ]
-    pack_step = _run_step("pack", pack_cmd, log_dir, timeout=timeout)
+    pack_step = _run_step("pack", pack_cmd, log_dir, runtime=runtime, timeout=timeout)
     report.steps.append(pack_step)
     if pack_step.returncode != 0 or mode == "pack":
         report.status = "PACKED" if pack_step.returncode == 0 else "PACK_FAILED"
@@ -131,11 +131,13 @@ def run_child_evaluation(
                 stderr_log=pack_step.stderr_log,
                 notes=[f"Child evaluation stopped after pack with status {report.status}."],
             )
+        runtime.finish(report.status, {"child_eval_json": str(eval_report_path)})
         return eval_report_path
 
     if mode == "local":
         if "FIB_DATASET_PATH" not in os.environ:
             report.status = "LOCAL_SKIPPED_NO_DATASET"
+            runtime.event("eval.skipped", {"reason": "FIB_DATASET_PATH is not set"})
             eval_report_path = write_json(root / "child_eval.json", asdict(report))
             if finalize:
                 finalize_child_evidence(
@@ -146,6 +148,7 @@ def run_child_evaluation(
                     stderr_log=pack_step.stderr_log,
                     notes=["Local child evaluation skipped because FIB_DATASET_PATH is not set."],
                 )
+            runtime.finish(report.status, {"child_eval_json": str(eval_report_path)})
             return eval_report_path
         local_cmd = [
             sys.executable,
@@ -155,7 +158,7 @@ def run_child_evaluation(
             "--solution-dir",
             paths["workspace_solution"],
         ]
-        local_step = _run_step("local", local_cmd, log_dir, timeout=timeout)
+        local_step = _run_step("local", local_cmd, log_dir, runtime=runtime, timeout=timeout)
         report.steps.append(local_step)
         report.status = "LOCAL_PASSED" if local_step.returncode == 0 else "LOCAL_FAILED"
         eval_report_path = write_json(root / "child_eval.json", asdict(report))
@@ -168,6 +171,7 @@ def run_child_evaluation(
                 stderr_log=local_step.stderr_log,
                 notes=[f"Local child evaluation finished with status {report.status}."],
             )
+        runtime.finish(report.status, {"child_eval_json": str(eval_report_path)})
         return eval_report_path
 
     if mode == "modal-full":
@@ -187,7 +191,7 @@ def run_child_evaluation(
         ]
         if retry:
             modal_cmd.append("--retry")
-        modal_step = _run_step("modal_full", modal_cmd, log_dir, timeout=None)
+        modal_step = _run_step("modal_full", modal_cmd, log_dir, runtime=runtime, timeout=None)
         report.steps.append(modal_step)
         report.status = "MODAL_PASSED" if modal_step.returncode == 0 else "MODAL_FAILED"
         eval_report_path = write_json(root / "child_eval.json", asdict(report))
@@ -201,6 +205,7 @@ def run_child_evaluation(
                 stderr_log=modal_step.stderr_log,
                 notes=[f"Modal full child evaluation finished with status {report.status}."],
             )
+        runtime.finish(report.status, {"child_eval_json": str(eval_report_path)})
         return eval_report_path
 
     raise ValueError(f"unsupported child eval mode: {mode}")
