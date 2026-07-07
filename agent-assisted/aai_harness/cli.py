@@ -7,9 +7,10 @@ from .archive import archive_evidence, gate_and_archive
 from .bootstrap import bootstrap_baseline, resolve_task
 from .campaign import init_campaign, write_round_prompt
 from .gates import gate_evidence, write_gate_result
+from .parent_selection import select_parent
 from .paths import ensure_aai_layout
 from .proposal import write_proposal_template, write_review
-from .schemas import now_version
+from .workspace import capture_child_diff, finalize_child_evidence, missing_required_child_files, prepare_child_workspace
 
 
 def cmd_init(args: argparse.Namespace) -> None:
@@ -27,6 +28,49 @@ def cmd_bootstrap(args: argparse.Namespace) -> None:
         timeout=args.timeout,
     )
     print(path)
+
+
+def cmd_prepare_child(args: argparse.Namespace) -> None:
+    path = prepare_child_workspace(
+        args.campaign_id,
+        args.config_path,
+        child_id=args.child_id,
+        solution_dir=args.solution_dir,
+        parent_id=args.parent_id,
+        version=args.version,
+    )
+    print(path)
+
+
+def cmd_diff_child(args: argparse.Namespace) -> None:
+    path = capture_child_diff(args.campaign_id, args.child_id)
+    print(path)
+
+
+def cmd_finalize_child(args: argparse.Namespace) -> None:
+    path = finalize_child_evidence(
+        args.campaign_id,
+        args.child_id,
+        benchmark_result_json=args.benchmark_result_json,
+        retained_log=args.retained_log,
+        stdout_log=args.stdout_log,
+        stderr_log=args.stderr_log,
+        notes=args.note,
+    )
+    missing = missing_required_child_files(args.campaign_id, args.child_id)
+    if missing:
+        print(f"warning: missing required child files: {', '.join(missing)}")
+    print(path)
+
+
+def cmd_select_parent(args: argparse.Namespace) -> None:
+    result = select_parent(
+        args.definition,
+        metric=args.metric,
+        allow_failed=args.allow_failed,
+        output_path=args.output,
+    )
+    print(result.get("selected"))
 
 
 def cmd_gate(args: argparse.Namespace) -> None:
@@ -90,6 +134,37 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--run-local", action="store_true")
     p.add_argument("--timeout", type=int, default=3600)
     p.set_defaults(func=cmd_bootstrap)
+
+    p = sub.add_parser("prepare-child", help="create an isolated child workspace seeded from a parent solution")
+    p.add_argument("--campaign-id", required=True)
+    p.add_argument("--config-path", required=True)
+    p.add_argument("--child-id")
+    p.add_argument("--solution-dir")
+    p.add_argument("--parent-id", default="baseline")
+    p.add_argument("--version")
+    p.set_defaults(func=cmd_prepare_child)
+
+    p = sub.add_parser("diff-child", help="capture diff.patch between child parent snapshot and candidate workspace")
+    p.add_argument("--campaign-id", required=True)
+    p.add_argument("--child-id", required=True)
+    p.set_defaults(func=cmd_diff_child)
+
+    p = sub.add_parser("finalize-child", help="write child result.json EvidenceRecord and refresh diff.patch")
+    p.add_argument("--campaign-id", required=True)
+    p.add_argument("--child-id", required=True)
+    p.add_argument("--benchmark-result-json")
+    p.add_argument("--retained-log")
+    p.add_argument("--stdout-log")
+    p.add_argument("--stderr-log")
+    p.add_argument("--note", action="append")
+    p.set_defaults(func=cmd_finalize_child)
+
+    p = sub.add_parser("select-parent", help="select the best archived parent for a definition")
+    p.add_argument("--definition", required=True)
+    p.add_argument("--metric", default="avg_latency_ms")
+    p.add_argument("--allow-failed", action="store_true")
+    p.add_argument("--output")
+    p.set_defaults(func=cmd_select_parent)
 
     p = sub.add_parser("gate", help="validate child evidence before archive/promotion")
     p.add_argument("--evidence-json", required=True)
