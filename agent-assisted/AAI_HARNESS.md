@@ -2,6 +2,8 @@
 
 This document records how the user-designed draw.io workflow maps onto the repository implementation.
 
+For a detailed handoff to future agents, including project goals, module responsibilities, current progress, known risks, and recommended next tasks, read [`AAI_DEVELOPMENT_GUIDE.md`](./AAI_DEVELOPMENT_GUIDE.md).
+
 ## Design correction: LoongFlow-style structure, AAI-defined workflow
 
 AAI should not be a prompt-only Codex wrapper. The intended design is closer to the original full-agent architecture:
@@ -42,6 +44,12 @@ This prevents reward hacking where a kernel-search agent modifies evaluator, bas
 | Stage 2: Master Campaign | `aai_harness.campaign`, `aai_harness.archive`, `aai_harness.parent_selection`, `aai_harness.summary`, `aai_harness.memory`, `aai_harness.population` |
 | Runtime debugging | `aai_harness.runtime_logging` |
 | Mode 3: evidence-backed harness proposal | `aai_harness.proposal`, workflow action `review_proposal` |
+
+## Implemented in version `20260707T181000+0900`
+
+- Added `AAI_DEVELOPMENT_GUIDE.md` as the detailed handoff document for future agents and developers.
+- The guide describes project identity, design goals, non-goals, repository layout, module responsibilities, current progress, artifact contracts, workflow commands, known risks, coding guidance, and recommended next tasks.
+- Linked the guide from `agent-assisted/README.md` and this design plan.
 
 ## Implemented in version `20260707T175500+0900`
 
