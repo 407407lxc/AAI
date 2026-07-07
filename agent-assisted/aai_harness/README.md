@@ -17,37 +17,32 @@ Run commands from `agent-assisted/`:
 ```bash
 python -m aai_harness.cli init \
   --config-path gdn_decode_qk4_v8_d128_k_last/config.toml \
-  --campaign-id campaign-20260707T164312+0900
+  --campaign-id campaign-20260707T165028+0900
 
 python -m aai_harness.cli bootstrap \
   --config-path gdn_decode_qk4_v8_d128_k_last/config.toml \
-  --version 20260707T164312+0900
+  --version 20260707T165028+0900
 
 python -m aai_harness.cli campaign-init \
   --definition gdn_decode_qk4_v8_d128_k_last \
-  --campaign-id campaign-20260707T164312+0900
+  --campaign-id campaign-20260707T165028+0900
 
-python -m aai_harness.cli prepare-child \
-  --campaign-id campaign-20260707T164312+0900 \
+python -m aai_harness.cli run-child-round \
+  --campaign-id campaign-20260707T165028+0900 \
   --child-id child-0001 \
   --parent-id baseline \
-  --config-path gdn_decode_qk4_v8_d128_k_last/config.toml
-
-python -m aai_harness.cli run-child-eval \
-  --campaign-id campaign-20260707T164312+0900 \
-  --child-id child-0001 \
-  --mode pack
-
-python -m aai_harness.cli run-child-eval \
-  --campaign-id campaign-20260707T164312+0900 \
-  --child-id child-0001 \
+  --config-path gdn_decode_qk4_v8_d128_k_last/config.toml \
   --mode modal-full \
-  --workers 10
-
-python -m aai_harness.cli gate-archive \
-  --evidence-json .aai/campaigns/campaign-20260707T164312+0900/children/child-0001/result.json \
-  --diff-patch .aai/campaigns/campaign-20260707T164312+0900/children/child-0001/diff.patch \
+  --workers 10 \
   --kind variant
+```
+
+For lower-level debugging, you can still run the individual steps:
+
+```bash
+python -m aai_harness.cli prepare-child --campaign-id campaign-demo --child-id child-0001 --config-path gdn_decode_qk4_v8_d128_k_last/config.toml
+python -m aai_harness.cli run-child-eval --campaign-id campaign-demo --child-id child-0001 --mode pack
+python -m aai_harness.cli gate-archive --evidence-json .aai/campaigns/campaign-demo/children/child-0001/result.json --diff-patch .aai/campaigns/campaign-demo/children/child-0001/diff.patch --kind variant
 ```
 
 From the repository root, prefix the command with `PYTHONPATH=agent-assisted`:
@@ -67,7 +62,7 @@ YYYYMMDDTHHMMSS+ZZZZ
 Example:
 
 ```text
-20260707T164312+0900
+20260707T165028+0900
 ```
 
 This is used for bootstrap baselines, archived variants, failed runs, proposal files, child workspaces, and harness ledgers.
@@ -90,6 +85,8 @@ The CLI writes runtime state under `agent-assisted/.aai/`:
     children/<child_id>/
       child.json
       child_eval.json
+      round_report.json
+      gate.json
       parent_solution/
       workspace/
         config.toml
@@ -117,19 +114,13 @@ A child workspace starts from a parent snapshot and creates a mutable candidate 
 .aai/campaigns/<campaign_id>/children/<child_id>/workspace/solution/
 ```
 
-The third version adds `run-child-eval`, which points existing evaluator scripts at the child workspace:
+`run-child-round` is the high-level orchestration command. It prepares the child workspace, runs the selected evaluator, writes `child_eval.json`, refreshes `diff.patch`, finalizes `result.json`, writes `gate.json`, archives the evidence, and writes `round_report.json`.
 
-```bash
-python -m aai_harness.cli run-child-eval --campaign-id campaign-demo --child-id child-0001 --mode pack
-python -m aai_harness.cli run-child-eval --campaign-id campaign-demo --child-id child-0001 --mode local
-python -m aai_harness.cli run-child-eval --campaign-id campaign-demo --child-id child-0001 --mode modal-full --workers 10
-```
-
-`run-child-eval` writes `child_eval.json`, captures logs, refreshes `diff.patch`, and finalizes `result.json` unless `--no-finalize` is passed.
+Use `--mode pack` for smoke tests. Use `--mode modal-full` for promotion-quality evidence.
 
 ## Gate policy
 
-The default archive gate checks for failed benchmark status, protected path edits, suspicious diff patterns, and evidence schema compatibility. Warnings are emitted for edits outside the default `solution/` scope. Errors block promotion as a variant.
+The default archive gate checks for failed benchmark status, protected path edits, suspicious diff patterns, incomplete evidence, and evidence schema compatibility. Warnings are emitted for edits outside the default `solution/` scope. Errors block promotion as a variant.
 
 ## Relationship to existing scripts
 
@@ -140,4 +131,4 @@ The existing scripts remain the evaluator source of truth:
 - `scripts/run_modal_single.py`
 - `scripts/run_modal_multiple_gpus.py`
 
-AAI harness code calls these scripts and standardizes evidence, gates, archive layout, campaign state, workspace isolation, diff capture, child evaluation, and proposal review around them.
+AAI harness code calls these scripts and standardizes evidence, gates, archive layout, campaign state, workspace isolation, diff capture, child evaluation, child-round orchestration, and proposal review around them.
