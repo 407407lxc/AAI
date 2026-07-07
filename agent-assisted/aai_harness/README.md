@@ -17,18 +17,18 @@ Run commands from `agent-assisted/`:
 ```bash
 python -m aai_harness.cli init \
   --config-path gdn_decode_qk4_v8_d128_k_last/config.toml \
-  --campaign-id campaign-20260707T170312+0900
+  --campaign-id campaign-20260707T171000+0900
 
 python -m aai_harness.cli bootstrap \
   --config-path gdn_decode_qk4_v8_d128_k_last/config.toml \
-  --version 20260707T170312+0900
+  --version 20260707T171000+0900
 
 python -m aai_harness.cli campaign-init \
   --definition gdn_decode_qk4_v8_d128_k_last \
-  --campaign-id campaign-20260707T170312+0900
+  --campaign-id campaign-20260707T171000+0900
 
 python -m aai_harness.cli run-child-round \
-  --campaign-id campaign-20260707T170312+0900 \
+  --campaign-id campaign-20260707T171000+0900 \
   --child-id child-0001 \
   --parent-id baseline \
   --config-path gdn_decode_qk4_v8_d128_k_last/config.toml \
@@ -37,7 +37,10 @@ python -m aai_harness.cli run-child-round \
   --kind variant
 
 python -m aai_harness.cli summarize-campaign \
-  --campaign-id campaign-20260707T170312+0900
+  --campaign-id campaign-20260707T171000+0900
+
+python -m aai_harness.cli update-campaign-memory \
+  --campaign-id campaign-20260707T171000+0900
 ```
 
 For lower-level debugging, you can still run the individual steps:
@@ -65,10 +68,10 @@ YYYYMMDDTHHMMSS+ZZZZ
 Example:
 
 ```text
-20260707T170312+0900
+20260707T171000+0900
 ```
 
-This is used for bootstrap baselines, archived variants, failed runs, proposal files, child workspaces, campaign summaries, and harness ledgers.
+This is used for bootstrap baselines, archived variants, failed runs, proposal files, child workspaces, campaign summaries, memory updates, and harness ledgers.
 
 ## Runtime archive layout
 
@@ -87,6 +90,7 @@ The CLI writes runtime state under `agent-assisted/.aai/`:
     campaign.json
     campaign_summary.json
     campaign_summary.md
+    memory_update.json
     children/<child_id>/
       child.json
       child_eval.json
@@ -123,14 +127,19 @@ A child workspace starts from a parent snapshot and creates a mutable candidate 
 
 Use `--mode pack` for smoke tests. Use `--mode modal-full` for promotion-quality evidence.
 
-## Campaign summary
+## Campaign summary and memory
 
 `summarize-campaign` reads all child `round_report.json` files and writes:
 
 - `campaign_summary.json`: machine-readable counters, child rows, best metric, gate failure codes, and recommended next steps.
 - `campaign_summary.md`: human-readable campaign dashboard.
 
-The summary reports total children, archived variants, failed runs, gate pass counts, status counts, mode counts, archive-kind counts, and repeated gate failure codes.
+`update-campaign-memory` then appends summary findings to the long-term archive memory:
+
+- `archive/<definition>/harness-ledger.md`: compact campaign summary and recommended next steps.
+- `archive/<definition>/traps/TRAPS.md`: repeated gate failures and failed child statuses that should be avoided in later rounds.
+
+The command writes `memory_update.json` under the campaign directory so the memory mutation itself is auditable.
 
 ## Gate policy
 
@@ -145,4 +154,4 @@ The existing scripts remain the evaluator source of truth:
 - `scripts/run_modal_single.py`
 - `scripts/run_modal_multiple_gpus.py`
 
-AAI harness code calls these scripts and standardizes evidence, gates, archive layout, campaign state, workspace isolation, diff capture, child evaluation, child-round orchestration, campaign summaries, and proposal review around them.
+AAI harness code calls these scripts and standardizes evidence, gates, archive layout, campaign state, workspace isolation, diff capture, child evaluation, child-round orchestration, campaign summaries, memory updates, and proposal review around them.
