@@ -1,5 +1,26 @@
 # AAI Harness Modification Log
 
+## Version `20260707T171000+0900`
+
+Timestamp timezone: Asia/Tokyo.
+
+### Changes
+
+- Added `memory.py` for Master Campaign long-term memory updates.
+- Added `update-campaign-memory` CLI command.
+- The command reads or creates `campaign_summary.json` and `campaign_summary.md`.
+- Added `memory_update.json` report generation under each campaign directory.
+- Added automatic appends to `archive/<definition>/harness-ledger.md` with compact campaign state, best child, and recommended next steps.
+- Added automatic appends to `archive/<definition>/traps/TRAPS.md` for repeated gate failure codes and failed child statuses.
+- Added `--min-failure-count` to control trap emission threshold.
+- Added `--no-traps` for ledger-only memory updates.
+- Updated CLI, README, and design plan documentation for campaign memory updates.
+
+### Notes
+
+- Memory updates are append-only and auditable through `memory_update.json`.
+- If a campaign summary does not contain a definition, pass `--definition` explicitly.
+
 ## Version `20260707T170312+0900`
 
 Timestamp timezone: Asia/Tokyo.
