@@ -12,10 +12,13 @@ from .gates import gate_evidence, write_gate_result
 from .memory import update_campaign_memory
 from .parent_selection import select_parent
 from .paths import ensure_aai_layout
+from .planner import propose_round
+from .population import admit_round_report, population_status
 from .proposal import write_proposal_template, write_review
 from .round import run_child_round
 from .start import start_aai
 from .summary import summarize_campaign
+from .workflow import advance_workflow, init_workflow, workflow_status
 from .workspace import capture_child_diff, finalize_child_evidence, missing_required_child_files, prepare_child_workspace
 
 
@@ -37,6 +40,67 @@ def cmd_start(args: argparse.Namespace) -> None:
         codex_timeout=args.codex_timeout,
     )
     print(path)
+
+
+def cmd_workflow_init(args: argparse.Namespace) -> None:
+    path = init_workflow(
+        args.campaign_id,
+        args.definition,
+        args.config_path,
+        objective=args.objective,
+        planner_backend=args.planner_backend,
+        executor_backend=args.executor_backend,
+        evaluator_backend=args.evaluator_backend,
+        parent_id=args.parent_id,
+    )
+    print(path)
+
+
+def cmd_workflow_status(args: argparse.Namespace) -> None:
+    print(workflow_status(args.campaign_id))
+
+
+def cmd_workflow_advance(args: argparse.Namespace) -> None:
+    artifacts = {}
+    for item in args.artifact or []:
+        key, _, value = item.partition("=")
+        if key and value:
+            artifacts[key] = value
+    path = advance_workflow(
+        args.campaign_id,
+        args.action,
+        artifacts=artifacts,
+        notes=args.note,
+        child_id=args.child_id,
+        parent_id=args.parent_id,
+    )
+    print(path)
+
+
+def cmd_plan_round(args: argparse.Namespace) -> None:
+    path = propose_round(
+        args.campaign_id,
+        objective=args.objective,
+        child_id=args.child_id,
+        num_children=args.num_children,
+        planner_backend=args.planner_backend,
+        advance=not args.no_advance,
+    )
+    print(path)
+
+
+def cmd_admit_population(args: argparse.Namespace) -> None:
+    path = admit_round_report(
+        args.campaign_id,
+        args.child_id,
+        args.definition,
+        metric=args.metric,
+    )
+    print(path)
+
+
+def cmd_population_status(args: argparse.Namespace) -> None:
+    print(population_status(args.definition, metric=args.metric))
 
 
 def cmd_configure_codex(args: argparse.Namespace) -> None:
@@ -246,6 +310,51 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--codex-sandbox", default="workspace-write")
     p.add_argument("--codex-timeout", type=int, default=7200)
     p.set_defaults(func=cmd_start)
+
+    p = sub.add_parser("workflow-init", help="create hard AAI workflow state machine for a campaign")
+    p.add_argument("--campaign-id", required=True)
+    p.add_argument("--definition", required=True)
+    p.add_argument("--config-path", required=True)
+    p.add_argument("--objective", default="latency optimization")
+    p.add_argument("--planner-backend", default="rule")
+    p.add_argument("--executor-backend", default="codex")
+    p.add_argument("--evaluator-backend", default="modal-full")
+    p.add_argument("--parent-id", default="baseline")
+    p.set_defaults(func=cmd_workflow_init)
+
+    p = sub.add_parser("workflow-status", help="show current hard workflow state and allowed next actions")
+    p.add_argument("--campaign-id", required=True)
+    p.set_defaults(func=cmd_workflow_status)
+
+    p = sub.add_parser("workflow-advance", help="advance workflow state after an allowed action")
+    p.add_argument("--campaign-id", required=True)
+    p.add_argument("--action", required=True, choices=["bootstrap_baseline", "plan_round", "prepare_child", "run_agent", "evaluate_child", "gate_archive", "summarize_campaign", "update_memory", "select_parent", "review_proposal"])
+    p.add_argument("--artifact", action="append", help="artifact key=value, may be repeated")
+    p.add_argument("--note", action="append")
+    p.add_argument("--child-id")
+    p.add_argument("--parent-id")
+    p.set_defaults(func=cmd_workflow_advance)
+
+    p = sub.add_parser("plan-round", help="write structured LoongFlow-style planner decision")
+    p.add_argument("--campaign-id", required=True)
+    p.add_argument("--objective")
+    p.add_argument("--child-id")
+    p.add_argument("--num-children", type=int, default=1)
+    p.add_argument("--planner-backend")
+    p.add_argument("--no-advance", action="store_true")
+    p.set_defaults(func=cmd_plan_round)
+
+    p = sub.add_parser("admit-population", help="admit a child round report into the population/checkpoint database")
+    p.add_argument("--campaign-id", required=True)
+    p.add_argument("--child-id", required=True)
+    p.add_argument("--definition", required=True)
+    p.add_argument("--metric", default="avg_latency_ms")
+    p.set_defaults(func=cmd_admit_population)
+
+    p = sub.add_parser("population-status", help="show current population/checkpoint database status")
+    p.add_argument("--definition", required=True)
+    p.add_argument("--metric", default="avg_latency_ms")
+    p.set_defaults(func=cmd_population_status)
 
     p = sub.add_parser("configure-codex", help="write .aai/codex_config.json for Codex CLI automation")
     p.add_argument("--model", required=True)
