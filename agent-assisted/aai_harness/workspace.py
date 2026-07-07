@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import shutil
+from dataclasses import asdict
 from pathlib import Path
-from typing import Any
 
 from .bootstrap import resolve_task
 from .diffing import capture_directory_diff
@@ -81,7 +81,7 @@ def prepare_child_workspace(
         "campaign_id": campaign_id,
         "child_id": child_id,
         "parent_id": parent_id,
-        "task": task,
+        "task": asdict(task),
         "paths": {
             "root": str(root),
             "workspace": str(workspace),
