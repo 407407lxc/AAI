@@ -119,6 +119,8 @@ class RuntimeLogger:
     ) -> CommandResult:
         started = now_version()
         started_mono = time.monotonic()
+        stdout_log = self.command_dir / f"{name}.stdout.log"
+        stderr_log = self.command_dir / f"{name}.stderr.log"
         safe_env = redact_env(env or os.environ.copy())
         self.event(
             "command.started",
@@ -130,26 +132,38 @@ class RuntimeLogger:
                 "env": safe_env,
             },
         )
-        proc = subprocess.run(
-            command,
-            cwd=str(cwd),
-            text=True,
-            input=stdin,
-            capture_output=True,
-            timeout=timeout,
-            env=env,
-        )
+        try:
+            proc = subprocess.run(
+                command,
+                cwd=str(cwd),
+                text=True,
+                input=stdin,
+                capture_output=True,
+                timeout=timeout,
+                env=env,
+            )
+            returncode = proc.returncode
+            stdout_text = proc.stdout or ""
+            stderr_text = proc.stderr or ""
+        except subprocess.TimeoutExpired as exc:
+            returncode = 124
+            stdout_text = exc.stdout or ""
+            stderr_text = (exc.stderr or "") + f"\nCommand timed out after {timeout} seconds."
+            self.event("command.timeout", {"name": name, "timeout": timeout})
+        except OSError as exc:
+            returncode = 127
+            stdout_text = ""
+            stderr_text = f"Command failed to start: {exc}"
+            self.event("command.start_failed", {"name": name, "error": str(exc)})
         finished = now_version()
         duration = time.monotonic() - started_mono
-        stdout_log = self.command_dir / f"{name}.stdout.log"
-        stderr_log = self.command_dir / f"{name}.stderr.log"
-        stdout_log.write_text(proc.stdout or "", encoding="utf-8")
-        stderr_log.write_text(proc.stderr or "", encoding="utf-8")
+        stdout_log.write_text(stdout_text, encoding="utf-8")
+        stderr_log.write_text(stderr_text, encoding="utf-8")
         result = CommandResult(
             name=name,
             command=command,
             cwd=str(cwd),
-            returncode=proc.returncode,
+            returncode=returncode,
             duration_seconds=duration,
             stdout_log=str(stdout_log),
             stderr_log=str(stderr_log),
