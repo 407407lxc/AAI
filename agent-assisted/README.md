@@ -1,136 +1,119 @@
-# Agent-Assisted FlashInfer Contest Package
+# Agentic AI Infrastructure Harness Package
 
-This directory is the agent-assisted reproducibility package for our MLSys
-2026 FlashInfer AI Kernel Generation Contest submissions. It contains the
-retained kernels, submission configs, benchmark artifacts, workflow scripts,
-agent skills, and the agent-assisted technical report.
+This directory contains the AAI harness package and the evaluator scripts that the harness can call.
+
+The old retained-kernel directories, old agent workflow skills, historical report PDF, and full-agent trace package have been removed from this branch. AAI does not need to vendor those artifacts. Instead, AAI expects a target package to be supplied through a `config.toml` path such as:
+
+```text
+<definition>/config.toml
+```
+
+The target package should provide the solution directory and entry point expected by the existing evaluator scripts.
+
+## Start here
+
+For future agents taking over this project, read these first:
+
+1. [`AAI_DEVELOPMENT_GUIDE.md`](./AAI_DEVELOPMENT_GUIDE.md): detailed development handoff, goals, current progress, risks, and next tasks.
+2. [`AAI_HARNESS.md`](./AAI_HARNESS.md): design mapping from the user workflow to implementation modules.
+3. [`AAI_FULL_AGENT_STYLE.md`](./AAI_FULL_AGENT_STYLE.md): how AAI mirrors the original full-agent / LoongFlow trace schema.
+4. [`aai_harness/README.md`](./aai_harness/README.md): startup guide, command reference, and runtime layout.
 
 ## Layout
 
 ```text
 .
-|-- report.pdf
+|-- README.md
+|-- AAI_DEVELOPMENT_GUIDE.md
+|-- AAI_FULL_AGENT_STYLE.md
+|-- AAI_HARNESS.md
 |-- scripts/
-|-- skills/
-|-- moe_fp8_block_scale_ds_routing_topk8_ng8_kg4_e32_h7168_i2048/
-|-- gdn_decode_qk4_v8_d128_k_last/
-|-- gdn_prefill_qk4_v8_d128_k_last/
-|-- dsa_sparse_attention_h16_ckv512_kpe64_topk2048_ps64/
-`-- dsa_topk_indexer_fp8_h64_d128_topk2048_ps64/
+`-- aai_harness/
 ```
 
-Each kernel directory contains:
+Important paths:
 
-- `config.toml`: FlashInfer submission metadata.
-- `solution/`: Triton or CUDA source loaded by the evaluator.
-- `artifacts/`: retained benchmark logs and summaries.
-- `README.md`: per-kernel notes, entry point, candidate name, and retained
-  result.
+- `aai_harness/`: AAI harness Python package, CLI, Codex adapter, runtime logging, archive gates, campaign summary, and memory update logic.
+- `scripts/`: existing pack/local/Modal evaluator scripts that AAI uses for candidate evaluation.
+- `AAI_HARNESS.md`: design note mapping the AAI workflow to the implementation modules.
+- `AAI_FULL_AGENT_STYLE.md`: implementation note for the full-agent-style trace mirror.
+- `AAI_DEVELOPMENT_GUIDE.md`: handoff document for future agents and developers.
 
-## Retained Kernels
+## Codex-backed quick start
 
-| Track | Kernel | Retained result |
-| --- | --- | --- |
-| MoE FP8 | [Block-scale routing](./moe_fp8_block_scale_ds_routing_topk8_ng8_kg4_e32_h7168_i2048/)<br>`kernel.py::run` | 19/19 passed<br>0.289740 ms, three-repeat mean |
-| Gated DeltaNet | [Decode QK4](./gdn_decode_qk4_v8_d128_k_last/)<br>`kernel.py::kernel_hybrid_dispatch` | 54/54 passed<br>0.006201 ms average |
-| Gated DeltaNet | [Prefill QK4](./gdn_prefill_qk4_v8_d128_k_last/)<br>`kernel.py::kernel_prefill_hybrid` | 100/100 passed<br>0.051992 ms average |
-| DeepSeek Sparse Attention | [Sparse attention](./dsa_sparse_attention_h16_ckv512_kpe64_topk2048_ps64/)<br>`kernel.py::run` | 23/23 passed<br>0.011128 ms average |
-| DeepSeek Sparse Attention | [Top-k indexer](./dsa_topk_indexer_fp8_h64_d128_topk2048_ps64/)<br>`kernel.cu::kernel_cuda` | 128/128 passed<br>0.006893 ms average |
-
-## Setup
+Run from this directory:
 
 ```bash
-conda create -n fi-bench python=3.12
-conda activate fi-bench
-pip install flashinfer-bench modal
-modal setup
-modal volume create flashinfer-trace
-modal volume put flashinfer-trace /path/to/mlsys26-contest-trace/
+export CODEX_API_KEY=<your OpenAI API key>
+
+python -m aai_harness.cli configure-codex \
+  --model gpt-5.5-codex \
+  --api-key-env CODEX_API_KEY
+
+python -m aai_harness.cli start \
+  --config-path <definition>/config.toml \
+  --campaign-id campaign-demo \
+  --codex-model gpt-5.5-codex
+
+python -m aai_harness.cli workflow-status \
+  --campaign-id campaign-demo
 ```
 
-The Modal scripts expect the official contest workloads to be available in the
-`flashinfer-trace` volume mounted at `/data`.
+AAI now uses a hard workflow state machine. Do not treat Codex as the global workflow controller; Codex is an executor backend for bounded child workspaces.
 
-## Pack a Solution
+## Full-agent-style trace mirror
 
-Run commands from this `agent-assisted/` directory:
+After one or more AAI rounds, mirror current artifacts into the original full-agent-style trace layout:
 
 ```bash
-python scripts/pack_solution.py \
-  --config-path gdn_decode_qk4_v8_d128_k_last/config.toml \
-  --output /tmp/gdn_decode.solution.json
+python -m aai_harness.full_agent_trace_cli sync \
+  --campaign-id campaign-demo \
+  --definition <definition> \
+  --iteration 1 \
+  --child-id child-0001
 ```
 
-## Evaluation
+This writes under:
 
-Use `--config-path` to select the kernel to evaluate. The scripts read the
-definition, implementation language, entry point, and solution directory from
-that `config.toml`.
+```text
+.aai/campaigns/<campaign_id>/full_agent_trace/
+```
 
-For local evaluation on a machine with the dataset and a compatible CUDA GPU:
+It mirrors planner, executor, evaluator, summarizer, and checkpoint artifacts without restoring old historical full-agent traces.
+
+## Command meanings
+
+- `configure-codex`: records Codex model, binary, sandbox, timeout, and API-key environment variable name in `.aai/codex_config.json`; it does not store the API key.
+- `codex-status`: prints redacted Codex configuration and whether the API-key environment variable is present.
+- `start`: resolves the task, creates `.aai/`, initializes a campaign, configures Codex when requested, and writes `aai_start.json` plus `workflow.json`.
+- `workflow-status`: prints the current hard workflow state and allowed next actions.
+- `workflow-advance`: advances the workflow only along allowed transitions.
+- `plan-round`: writes structured planner decisions as `plans/plan-<version>.json` and `.md`.
+- `bootstrap`: packs and snapshots the current target solution as immutable baseline evidence.
+- `prepare-child`: creates an isolated child workspace with `parent_solution/` and editable `workspace/solution/`.
+- `run-codex-agent`: runs Codex CLI against the prepared child workspace and writes `codex_agent_run.json` plus runtime logs.
+- `run-child-eval`: runs pack/local/modal evaluator scripts against an existing child workspace without archiving.
+- `run-child-round`: evaluates, gates, archives, and writes `round_report.json`; use `--skip-prepare` after Codex edits.
+- `summarize-campaign`: reads all child round reports and writes `campaign_summary.json` / `campaign_summary.md`.
+- `update-campaign-memory`: appends campaign findings into `harness-ledger.md` and repeated failures into `TRAPS.md`.
+- `admit-population`: admits a child round into population/checkpoint lineage memory.
+- `population-status`: prints current population/checkpoint database state.
+- `full_agent_trace_cli sync`: mirrors AAI artifacts into a full-agent-style trace tree.
+- `select-parent`: picks the best archived baseline/variant for the next round.
+
+From the repository root:
 
 ```bash
-export FIB_DATASET_PATH=/path/to/mlsys26-contest
-python scripts/run_local.py \
-  --config-path dsa_topk_indexer_fp8_h64_d128_topk2048_ps64/config.toml
+PYTHONPATH=agent-assisted python -m aai_harness.cli --help
 ```
 
-For Modal B200 single-workload evaluation:
+## Evaluator scripts
 
-```bash
-python -m modal run scripts/run_modal_single.py \
-  --workload-uuid <workload_uuid_or_index> \
-  --config-path dsa_topk_indexer_fp8_h64_d128_topk2048_ps64/config.toml \
-  --official --no-profile-torch --no-profile-ncu
-```
+AAI keeps `scripts/` because the harness still uses these as evaluator/packing backends:
 
-For Modal B200 full-kernel evaluation:
+- `scripts/pack_solution.py`
+- `scripts/run_local.py`
+- `scripts/run_modal_single.py`
+- `scripts/run_modal_multiple_gpus.py`
 
-```bash
-export FIB_DATASET_PATH=/path/to/mlsys26-contest
-python scripts/run_modal_multiple_gpus.py \
-  --config-path dsa_topk_indexer_fp8_h64_d128_topk2048_ps64/config.toml \
-  --workers 10 \
-  --out-dir results/dsa_topk_indexer_fp8_h64_d128_topk2048_ps64
-```
-
-To retry only missing or failed workloads from an existing output directory:
-
-```bash
-python scripts/run_modal_multiple_gpus.py \
-  --config-path dsa_topk_indexer_fp8_h64_d128_topk2048_ps64/config.toml \
-  --workers 4 \
-  --out-dir results/dsa_topk_indexer_fp8_h64_d128_topk2048_ps64 \
-  --retry
-```
-
-## Agent Workflow Skills
-
-The [skills](./skills/) directory contains the workflow instructions used for
-optimization and submission handling:
-
-| Skill | Purpose |
-| --- | --- |
-| [flashinfer-b200-contest-optimizer](./skills/flashinfer-b200-contest-optimizer/) | FlashInfer B200 contest loop: reference-first recon, shape-aware Modal benchmarking, NCU analysis, and promotion gates. |
-| [flashinfer-submission-tagger](./skills/flashinfer-submission-tagger/) | Submission tag and `config.toml` topology validation helper. |
-
-For broader repository context and the autonomous full-agent package, see the
-top-level [README](../README.md).
-
-## License
-
-This package is licensed under the [Apache License 2.0](../LICENSE).
-
-## Citation
-
-If this work is helpful, please cite the technical report:
-
-```bibtex
-@misc{shui2026harnessengineering,
-  title        = {Harness Engineering for LLM-Driven GPU Kernel Generation},
-  author       = {Yue Shui and Chenyu Ma and Hangfei Xu and Shengzhao Wen and Yanpeng Wang},
-  year         = {2026},
-  howpublished = {\url{https://github.com/syhya/mlsys26-flashinfer-contest}},
-  note         = {Technical report for the MLSys 2026 FlashInfer AI Kernel Generation Contest}
-}
-```
+Use them directly only for low-level debugging. Normal AAI usage should go through `python -m aai_harness.cli ...`.
