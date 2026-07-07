@@ -11,6 +11,7 @@ from .gates import gate_evidence, write_gate_result
 from .parent_selection import select_parent
 from .paths import ensure_aai_layout
 from .proposal import write_proposal_template, write_review
+from .round import run_child_round
 from .workspace import capture_child_diff, finalize_child_evidence, missing_required_child_files, prepare_child_workspace
 
 
@@ -52,6 +53,24 @@ def cmd_run_child_eval(args: argparse.Namespace) -> None:
         timeout=args.timeout,
         retry=args.retry,
         finalize=args.finalize,
+    )
+    print(path)
+
+
+def cmd_run_child_round(args: argparse.Namespace) -> None:
+    path = run_child_round(
+        args.campaign_id,
+        args.config_path,
+        child_id=args.child_id,
+        solution_dir=args.solution_dir,
+        parent_id=args.parent_id,
+        mode=args.mode,
+        archive_kind=args.kind,
+        workers=args.workers,
+        timeout=args.timeout,
+        retry=args.retry,
+        version=args.version,
+        skip_prepare=args.skip_prepare,
     )
     print(path)
 
@@ -167,6 +186,21 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--retry", action="store_true")
     p.add_argument("--no-finalize", action="store_false", dest="finalize")
     p.set_defaults(func=cmd_run_child_eval, finalize=True)
+
+    p = sub.add_parser("run-child-round", help="prepare, evaluate, gate, and archive one child round")
+    p.add_argument("--campaign-id", required=True)
+    p.add_argument("--config-path", required=True)
+    p.add_argument("--child-id")
+    p.add_argument("--solution-dir")
+    p.add_argument("--parent-id", default="baseline")
+    p.add_argument("--mode", choices=["pack", "local", "modal-full"], default="pack")
+    p.add_argument("--kind", choices=["baseline", "variant", "failed"], default="variant")
+    p.add_argument("--workers", type=int, default=10)
+    p.add_argument("--timeout", type=int, default=3600)
+    p.add_argument("--retry", action="store_true")
+    p.add_argument("--version")
+    p.add_argument("--skip-prepare", action="store_true")
+    p.set_defaults(func=cmd_run_child_round)
 
     p = sub.add_parser("diff-child", help="capture diff.patch between child parent snapshot and candidate workspace")
     p.add_argument("--campaign-id", required=True)
