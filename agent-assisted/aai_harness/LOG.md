@@ -1,5 +1,26 @@
 # AAI Harness Modification Log
 
+## Version `20260707T164312+0900`
+
+Timestamp timezone: Asia/Tokyo.
+
+### Changes
+
+- Added `child_eval.py` for running existing evaluator scripts against isolated child workspaces.
+- Added `run-child-eval` CLI command with modes:
+  - `pack`: run `scripts/pack_solution.py` against `workspace/config.toml` and `workspace/solution`;
+  - `local`: run pack first, then `scripts/run_local.py` when `FIB_DATASET_PATH` is available;
+  - `modal-full`: run pack first, then `scripts/run_modal_multiple_gpus.py` with child workspace paths and child output directory.
+- Added `child_eval.json` report generation with command list, return codes, log paths, and artifact paths.
+- Added automatic stdout/stderr capture under each child `logs/` directory.
+- Connected evaluator output to `finalize_child_evidence`, so `run-child-eval` refreshes `diff.patch` and writes child `result.json` by default.
+- Updated CLI, README, and design plan documentation for the new child evaluation runner.
+
+### Notes
+
+- This version still does not merge or promote child candidates automatically; `gate-archive` remains an explicit separate step.
+- The evaluator runner uses existing scripts as the source of truth and passes workspace paths explicitly, avoiding mutation of repository-level submitted solutions.
+
 ## Version `20260707T163714+0900`
 
 Timestamp timezone: Asia/Tokyo.
