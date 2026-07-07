@@ -12,6 +12,7 @@ from .parent_selection import select_parent
 from .paths import ensure_aai_layout
 from .proposal import write_proposal_template, write_review
 from .round import run_child_round
+from .summary import summarize_campaign
 from .workspace import capture_child_diff, finalize_child_evidence, missing_required_child_files, prepare_child_workspace
 
 
@@ -73,6 +74,12 @@ def cmd_run_child_round(args: argparse.Namespace) -> None:
         skip_prepare=args.skip_prepare,
     )
     print(path)
+
+
+def cmd_summarize_campaign(args: argparse.Namespace) -> None:
+    json_path, md_path = summarize_campaign(args.campaign_id, metric=args.metric)
+    print(json_path)
+    print(md_path)
 
 
 def cmd_diff_child(args: argparse.Namespace) -> None:
@@ -201,6 +208,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--version")
     p.add_argument("--skip-prepare", action="store_true")
     p.set_defaults(func=cmd_run_child_round)
+
+    p = sub.add_parser("summarize-campaign", help="write campaign_summary.json and campaign_summary.md")
+    p.add_argument("--campaign-id", required=True)
+    p.add_argument("--metric", default="avg_latency_ms")
+    p.set_defaults(func=cmd_summarize_campaign)
 
     p = sub.add_parser("diff-child", help="capture diff.patch between child parent snapshot and candidate workspace")
     p.add_argument("--campaign-id", required=True)
