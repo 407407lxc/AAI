@@ -18,9 +18,16 @@ This prevents reward hacking where a kernel-search agent modifies evaluator, bas
 | --- | --- |
 | Stage -1: requirement parsing / feasibility | `aai_harness.schemas.TaskSpec`, `aai_harness.bootstrap.resolve_task` |
 | Mode 0: build / deploy / first baseline | `aai_harness.bootstrap.bootstrap_baseline` |
-| Stage 1: bounded child optimization | `aai_harness.workspace`, `aai_harness.diffing`, evidence schema in `aai_harness.schemas.EvidenceRecord`, gate checks in `aai_harness.gates` |
+| Stage 1: bounded child optimization | `aai_harness.workspace`, `aai_harness.diffing`, `aai_harness.child_eval`, evidence schema in `aai_harness.schemas.EvidenceRecord`, gate checks in `aai_harness.gates` |
 | Stage 2: Master Campaign | `aai_harness.campaign`, `aai_harness.archive`, `aai_harness.parent_selection` |
 | Mode 3: evidence-backed harness proposal | `aai_harness.proposal` |
+
+## Implemented in version `20260707T164312+0900`
+
+- Added `child_eval.py` for pack/local/modal-full evaluation of a child workspace.
+- Added `run-child-eval` CLI command.
+- `run-child-eval` writes `child_eval.json`, captures process logs, refreshes `diff.patch`, and finalizes `result.json` unless `--no-finalize` is used.
+- The runner points existing evaluator scripts at `workspace/config.toml` and `workspace/solution`, keeping repository-level submitted solutions unchanged.
 
 ## Implemented in version `20260707T163714+0900`
 
@@ -40,7 +47,7 @@ This prevents reward hacking where a kernel-search agent modifies evaluator, bas
 
 ## Next engineering steps
 
-1. Add automatic evaluator invocation from inside a child workspace.
+1. Add one-command child round orchestration: prepare child, run selected evaluator, gate, and archive.
 2. Add parent selection using novelty and failure traps, not only latency metric.
 3. Add optional adapters for LoongFlow planner/executor outputs.
 4. Add CI checks that run the gate on sample evidence.
