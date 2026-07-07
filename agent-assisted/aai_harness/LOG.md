@@ -1,5 +1,27 @@
 # AAI Harness Modification Log
 
+## Version `20260707T175500+0900`
+
+Timestamp timezone: Asia/Tokyo.
+
+### Changes
+
+- Added `workflow.py` for a hard AAI workflow state machine inspired by the original LoongFlow full-agent structure but using the user-designed AAI flow.
+- Added `workflow.json` as the authoritative campaign control artifact.
+- Added explicit workflow states: `TASK_RESOLVED`, `BASELINE_READY`, `ROUND_PLANNED`, `CHILD_PREPARED`, `AGENT_RAN`, `EVALUATED`, `GATED_ARCHIVED`, `SUMMARIZED`, `MEMORY_UPDATED`, `PARENT_SELECTED`, and `PROPOSAL_REVIEW`.
+- Added explicit workflow actions: `bootstrap_baseline`, `plan_round`, `prepare_child`, `run_agent`, `evaluate_child`, `gate_archive`, `summarize_campaign`, `update_memory`, `select_parent`, and `review_proposal`.
+- Added `planner.py` for LoongFlow-style structured planner decisions written as `plans/plan-<version>.json` and `.md`.
+- Added `population.py` for population/checkpoint lineage memory under `archive/<definition>/population/`.
+- Added CLI commands: `workflow-init`, `workflow-status`, `workflow-advance`, `plan-round`, `admit-population`, and `population-status`.
+- Updated `start.py` so every new AAI campaign automatically creates `workflow.json`.
+- Updated `agent-assisted/aai_harness/README.md` and `agent-assisted/AAI_HARNESS.md` to clarify that AAI follows a LoongFlow-style control-plane architecture while replacing the workflow semantics with AAI.
+
+### Notes
+
+- Codex remains an executor backend, not the global workflow controller.
+- Planner decisions are now structured artifacts, not only prompt text.
+- Population/checkpoint memory records both variants and failures, while only gated variants are eligible as best members.
+
 ## Version `20260707T174000+0900`
 
 Timestamp timezone: Asia/Tokyo.
