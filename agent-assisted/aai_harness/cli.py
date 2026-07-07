@@ -8,6 +8,7 @@ from .bootstrap import bootstrap_baseline, resolve_task
 from .campaign import init_campaign, write_round_prompt
 from .child_eval import run_child_evaluation
 from .gates import gate_evidence, write_gate_result
+from .memory import update_campaign_memory
 from .parent_selection import select_parent
 from .paths import ensure_aai_layout
 from .proposal import write_proposal_template, write_review
@@ -80,6 +81,17 @@ def cmd_summarize_campaign(args: argparse.Namespace) -> None:
     json_path, md_path = summarize_campaign(args.campaign_id, metric=args.metric)
     print(json_path)
     print(md_path)
+
+
+def cmd_update_campaign_memory(args: argparse.Namespace) -> None:
+    path = update_campaign_memory(
+        args.campaign_id,
+        definition=args.definition,
+        metric=args.metric,
+        min_failure_count=args.min_failure_count,
+        write_traps=not args.no_traps,
+    )
+    print(path)
 
 
 def cmd_diff_child(args: argparse.Namespace) -> None:
@@ -213,6 +225,14 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--campaign-id", required=True)
     p.add_argument("--metric", default="avg_latency_ms")
     p.set_defaults(func=cmd_summarize_campaign)
+
+    p = sub.add_parser("update-campaign-memory", help="append campaign summary findings to harness-ledger and TRAPS")
+    p.add_argument("--campaign-id", required=True)
+    p.add_argument("--definition")
+    p.add_argument("--metric", default="avg_latency_ms")
+    p.add_argument("--min-failure-count", type=int, default=1)
+    p.add_argument("--no-traps", action="store_true")
+    p.set_defaults(func=cmd_update_campaign_memory)
 
     p = sub.add_parser("diff-child", help="capture diff.patch between child parent snapshot and candidate workspace")
     p.add_argument("--campaign-id", required=True)
