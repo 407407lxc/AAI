@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -135,6 +135,6 @@ def population_status(definition: str, metric: str = "avg_latency_ms") -> dict[s
         "metric": population.metric,
         "member_count": len(population.members),
         "best_member_id": population.best_member_id,
-        "members": [member.__dict__ for member in population.members],
+        "members": [asdict(member) for member in population.members],
         "checkpoints": population.checkpoints,
     }
