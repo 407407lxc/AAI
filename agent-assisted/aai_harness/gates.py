@@ -25,6 +25,19 @@ SUSPICIOUS_PATTERNS = [
     re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", re.I),
 ]
 
+INCOMPLETE_STATUSES = {
+    "UNKNOWN",
+    "NO_BENCHMARK_RESULT",
+    "LOCAL_SKIPPED_NO_DATASET",
+}
+
+FAILED_STATUSES = {
+    "FAILED",
+    "ERROR",
+    "TIMEOUT",
+    "PARSE_ERROR",
+}
+
 
 def _add(findings: list[GateFinding], severity: str, code: str, message: str, path: str | None = None) -> None:
     findings.append(GateFinding(severity=severity, code=code, message=message, path=path))  # type: ignore[arg-type]
@@ -53,8 +66,10 @@ def gate_evidence(evidence_path: str | Path, diff_path: str | Path | None = None
     metrics = evidence.get("metrics") or {}
     status = str(metrics.get("status", "UNKNOWN"))
     failed = int(metrics.get("failed_workloads") or 0)
-    if failed > 0 or status.endswith("FAILED") or status in {"FAILED", "ERROR", "TIMEOUT", "PARSE_ERROR"}:
+    if failed > 0 or status.endswith("FAILED") or status in FAILED_STATUSES:
         _add(findings, "error", "benchmark_failed", f"status={status}, failed_workloads={failed}")
+    if status in INCOMPLETE_STATUSES:
+        _add(findings, "error", "benchmark_incomplete", f"status={status}; full benchmark evidence is required before variant promotion")
 
     if diff_path:
         diff_text = Path(diff_path).read_text(encoding="utf-8", errors="replace")
