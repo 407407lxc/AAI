@@ -8,6 +8,7 @@ AAI separates kernel search from harness governance:
 
 - **Child worker**: edits a bounded candidate workspace, normally only `solution/`, and emits evidence.
 - **Master campaign**: selects parents, writes narrow prompts, evaluates evidence, archives variants/failures, updates long-term memory, summarizes campaign state, writes memory updates, and decides whether the next round should continue.
+- **Agent backend**: Codex CLI can be used as the first supported local child-agent backend once API key env var and model name are configured.
 - **Mode 3 proposal review**: allows harness changes only when repeated evidence shows a tooling gap.
 
 This prevents reward hacking where a kernel-search agent modifies evaluator, baseline, scoring, or archive memory to make itself look better.
@@ -16,11 +17,22 @@ This prevents reward hacking where a kernel-search agent modifies evaluator, bas
 
 | Draw.io stage | Repository implementation |
 | --- | --- |
-| Stage -1: requirement parsing / feasibility | `aai_harness.schemas.TaskSpec`, `aai_harness.bootstrap.resolve_task` |
+| Stage -1: requirement parsing / feasibility | `aai_harness.schemas.TaskSpec`, `aai_harness.bootstrap.resolve_task`, `aai_harness.start` |
 | Mode 0: build / deploy / first baseline | `aai_harness.bootstrap.bootstrap_baseline` |
-| Stage 1: bounded child optimization | `aai_harness.workspace`, `aai_harness.diffing`, `aai_harness.child_eval`, `aai_harness.round`, evidence schema in `aai_harness.schemas.EvidenceRecord`, gate checks in `aai_harness.gates` |
+| Stage 1: bounded child optimization | `aai_harness.workspace`, `aai_harness.codex_adapter`, `aai_harness.diffing`, `aai_harness.child_eval`, `aai_harness.round`, evidence schema in `aai_harness.schemas.EvidenceRecord`, gate checks in `aai_harness.gates` |
 | Stage 2: Master Campaign | `aai_harness.campaign`, `aai_harness.archive`, `aai_harness.parent_selection`, `aai_harness.summary`, `aai_harness.memory` |
+| Runtime debugging | `aai_harness.runtime_logging` |
 | Mode 3: evidence-backed harness proposal | `aai_harness.proposal` |
+
+## Implemented in version `20260707T172000+0900`
+
+- Added `runtime_logging.py` for detailed JSONL runtime traces, redacted environment snapshots, command start/end events, durations, return codes, and stdout/stderr artifacts.
+- Added `codex_adapter.py` for Codex CLI configuration and execution.
+- Added `start.py` for AAI campaign start with optional Codex configuration.
+- Added CLI commands: `start`, `configure-codex`, `codex-status`, `write-codex-prompt`, and `run-codex-agent`.
+- `configure-codex` stores model name, Codex binary, sandbox mode, timeout, and the API-key environment variable name in `.aai/codex_config.json`; it does not store the secret value.
+- `run-codex-agent` runs `codex exec` against a prepared child workspace, writes `codex_agent_run.json`, captures Codex JSONL/stdout/stderr, and writes a final message artifact.
+- `run-child-eval` now also writes runtime traces and redacted environment snapshots for pack/local/modal evaluator commands.
 
 ## Implemented in version `20260707T171000+0900`
 
@@ -67,13 +79,13 @@ This prevents reward hacking where a kernel-search agent modifies evaluator, bas
 
 - It does not replace LoongFlow.
 - It does not replace FlashInfer-Bench or Modal evaluator scripts.
-- It does not automatically call an LLM endpoint.
+- It does not store API keys or access tokens in repo files.
 - It does not allow child workers to modify evaluator scripts without proposal review.
 
 ## Next engineering steps
 
-1. Add parent selection using novelty and failure traps, not only latency metric.
-2. Add optional adapters for LoongFlow planner/executor outputs.
-3. Add CI checks that run the gate on sample evidence.
-4. Add promotion helpers that copy a gated variant into an explicit release candidate directory.
-5. Add memory-aware child prompt generation that injects recent TRAPS into each round prompt.
+1. Add a Codex-backed `run-agent-round` command that chains prepare-child, run-codex-agent, run-child-round, summarize, and memory update.
+2. Add parent selection using novelty and failure traps, not only latency metric.
+3. Add optional adapters for LoongFlow planner/executor outputs.
+4. Add CI checks that run the gate on sample evidence.
+5. Add promotion helpers that copy a gated variant into an explicit release candidate directory.
