@@ -7,12 +7,14 @@ from .archive import archive_evidence, gate_and_archive
 from .bootstrap import bootstrap_baseline, resolve_task
 from .campaign import init_campaign, write_round_prompt
 from .child_eval import run_child_evaluation
+from .codex_adapter import codex_is_configured, configure_codex_agent, run_codex_child_agent, write_codex_prompt
 from .gates import gate_evidence, write_gate_result
 from .memory import update_campaign_memory
 from .parent_selection import select_parent
 from .paths import ensure_aai_layout
 from .proposal import write_proposal_template, write_review
 from .round import run_child_round
+from .start import start_aai
 from .summary import summarize_campaign
 from .workspace import capture_child_diff, finalize_child_evidence, missing_required_child_files, prepare_child_workspace
 
@@ -21,6 +23,61 @@ def cmd_init(args: argparse.Namespace) -> None:
     task = resolve_task(args.config_path, args.solution_dir)
     ensure_aai_layout(task.definition, args.campaign_id)
     print(f"AAI layout initialized for {task.definition}")
+
+
+def cmd_start(args: argparse.Namespace) -> None:
+    path = start_aai(
+        args.config_path,
+        campaign_id=args.campaign_id,
+        solution_dir=args.solution_dir,
+        codex_model=args.codex_model,
+        codex_api_key_env=args.codex_api_key_env,
+        codex_bin=args.codex_bin,
+        codex_sandbox=args.codex_sandbox,
+        codex_timeout=args.codex_timeout,
+    )
+    print(path)
+
+
+def cmd_configure_codex(args: argparse.Namespace) -> None:
+    path = configure_codex_agent(
+        model=args.model,
+        api_key_env=args.api_key_env,
+        codex_bin=args.codex_bin,
+        sandbox=args.sandbox,
+        timeout=args.timeout,
+        extra_args=args.extra_arg,
+        command_template=args.command_template,
+    )
+    print(path)
+
+
+def cmd_codex_status(args: argparse.Namespace) -> None:
+    print(codex_is_configured(args.config_path))
+
+
+def cmd_write_codex_prompt(args: argparse.Namespace) -> None:
+    path = write_codex_prompt(
+        args.campaign_id,
+        args.child_id,
+        args.objective,
+        parent_id=args.parent_id,
+        extra_context=args.extra_context,
+    )
+    print(path)
+
+
+def cmd_run_codex_agent(args: argparse.Namespace) -> None:
+    path = run_codex_child_agent(
+        args.campaign_id,
+        args.child_id,
+        prompt_path=args.prompt_path,
+        objective=args.objective,
+        parent_id=args.parent_id,
+        config_path=args.config_path,
+        timeout=args.timeout,
+    )
+    print(path)
 
 
 def cmd_bootstrap(args: argparse.Namespace) -> None:
@@ -178,6 +235,49 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--solution-dir")
     p.add_argument("--campaign-id")
     p.set_defaults(func=cmd_init)
+
+    p = sub.add_parser("start", help="start an AAI campaign and optionally configure Codex")
+    p.add_argument("--config-path", required=True)
+    p.add_argument("--solution-dir")
+    p.add_argument("--campaign-id")
+    p.add_argument("--codex-model")
+    p.add_argument("--codex-api-key-env", default="CODEX_API_KEY")
+    p.add_argument("--codex-bin", default="codex")
+    p.add_argument("--codex-sandbox", default="workspace-write")
+    p.add_argument("--codex-timeout", type=int, default=7200)
+    p.set_defaults(func=cmd_start)
+
+    p = sub.add_parser("configure-codex", help="write .aai/codex_config.json for Codex CLI automation")
+    p.add_argument("--model", required=True)
+    p.add_argument("--api-key-env", default="CODEX_API_KEY")
+    p.add_argument("--codex-bin", default="codex")
+    p.add_argument("--sandbox", default="workspace-write")
+    p.add_argument("--timeout", type=int, default=7200)
+    p.add_argument("--extra-arg", action="append")
+    p.add_argument("--command-template")
+    p.set_defaults(func=cmd_configure_codex)
+
+    p = sub.add_parser("codex-status", help="show redacted Codex adapter configuration status")
+    p.add_argument("--config-path")
+    p.set_defaults(func=cmd_codex_status)
+
+    p = sub.add_parser("write-codex-prompt", help="write a Codex child prompt for a prepared child workspace")
+    p.add_argument("--campaign-id", required=True)
+    p.add_argument("--child-id", required=True)
+    p.add_argument("--objective", required=True)
+    p.add_argument("--parent-id", default="baseline")
+    p.add_argument("--extra-context")
+    p.set_defaults(func=cmd_write_codex_prompt)
+
+    p = sub.add_parser("run-codex-agent", help="run Codex CLI against a prepared child workspace")
+    p.add_argument("--campaign-id", required=True)
+    p.add_argument("--child-id", required=True)
+    p.add_argument("--prompt-path")
+    p.add_argument("--objective")
+    p.add_argument("--parent-id", default="baseline")
+    p.add_argument("--config-path")
+    p.add_argument("--timeout", type=int)
+    p.set_defaults(func=cmd_run_codex_agent)
 
     p = sub.add_parser("bootstrap", help="Mode 0: validate, pack, and optionally run local baseline")
     p.add_argument("--config-path", required=True)
