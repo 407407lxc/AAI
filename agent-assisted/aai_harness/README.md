@@ -1,26 +1,69 @@
 # AAI Harness Workflow Layer
 
-This package implements the Agentic AI Infrastructure (AAI) harness layer. It is now AAI-only: historical retained kernels, legacy agent skills, reports, and full-agent traces are not vendored in this branch.
-
-AAI expects a target package to be provided through a `config.toml` path:
+AAI is now designed as a **LoongFlow-style workflow control plane** with user-defined AAI workflow semantics. The old `full-agent/` traces are not vendored in this branch, but their useful architectural idea is preserved:
 
 ```text
-<definition>/config.toml
+Plan -> Execute -> Evaluate -> Summarize -> Checkpoint / Parent Selection
 ```
 
-The target package supplies the solution directory and entry point consumed by the evaluator scripts.
+In AAI, that becomes:
 
-## What AAI provides
+```text
+AAI hard workflow engine
+  -> structured planner decision
+  -> bounded executor backend such as Codex
+  -> evaluator / gate / archive
+  -> campaign summary
+  -> memory + TRAPS
+  -> population checkpoint / next parent
+```
 
-- Codex-backed child-agent execution.
-- Isolated child workspaces.
-- Detailed runtime traces for debugging.
-- Evaluator wrappers around pack/local/Modal scripts.
-- Evidence schemas and archive gates.
-- Variant/failed archival.
-- Campaign summaries.
-- Long-term memory through `harness-ledger.md` and `TRAPS.md`.
-- Mode 3 evidence-backed proposal review for harness changes.
+Codex is **not** the workflow owner. Codex is an executor backend for the bounded `run_agent` node.
+
+## Core principle
+
+AAI does not rely on prompt-only control.
+
+- AAI owns the hard workflow state machine in `workflow.json`.
+- Planner output is a structured artifact, not only a text prompt.
+- Executor backends, such as Codex or future Claude Code / LoongFlow adapters, may only operate inside allowed workflow nodes.
+- Evaluator, gate, archive, campaign memory, and parent selection stay under AAI control.
+- Failed candidates are archived as negative evidence and can enter TRAPS.
+
+## Main modules
+
+```text
+aai_harness/
+  workflow.py        hard AAI state machine and allowed transitions
+  planner.py         LoongFlow-style structured planner decision
+  population.py      population/checkpoint database and lineage memory
+  codex_adapter.py   Codex CLI executor backend
+  child_eval.py      evaluator backend wrapper
+  gates.py           promotion gate
+  archive.py         variant/failed archive and ledger/TRAPS helpers
+  summary.py         campaign rollup
+  memory.py          long-term memory update
+```
+
+## Workflow states
+
+The default AAI state machine is:
+
+```text
+TASK_RESOLVED
+  -> BASELINE_READY
+  -> ROUND_PLANNED
+  -> CHILD_PREPARED
+  -> AGENT_RAN
+  -> EVALUATED
+  -> GATED_ARCHIVED
+  -> SUMMARIZED
+  -> MEMORY_UPDATED
+  -> PARENT_SELECTED
+  -> ROUND_PLANNED
+```
+
+Mode 3 proposal review is represented as a separate guarded transition from memory-updated campaign state.
 
 ## Prerequisites
 
@@ -33,8 +76,6 @@ You need:
 - an API key exported through an environment variable;
 - Modal credentials and trace volume only when running `--mode modal-full`.
 
-Example:
-
 ```bash
 cd agent-assisted
 export CODEX_API_KEY=<your OpenAI API key>
@@ -42,14 +83,7 @@ export CODEX_API_KEY=<your OpenAI API key>
 
 AAI stores the API-key environment variable name, not the secret value. Runtime environment snapshots redact variables whose names look like keys, tokens, secrets, passwords, auth values, or credentials.
 
-## Quick start: Codex-backed AAI round
-
-This is the normal startup flow when using Codex as the AAI child agent.
-
-```bash
-cd agent-assisted
-export CODEX_API_KEY=<your OpenAI API key>
-```
+## Quick start: workflow-controlled Codex round
 
 ### 1. Configure Codex
 
@@ -59,30 +93,13 @@ python -m aai_harness.cli configure-codex \
   --api-key-env CODEX_API_KEY
 ```
 
-This writes:
-
-```text
-.aai/codex_config.json
-```
-
-It records the model name, Codex binary, sandbox mode, timeout, and API-key environment variable name. It does not record the API key itself.
-
 Check the redacted status:
 
 ```bash
 python -m aai_harness.cli codex-status
 ```
 
-Expected useful fields:
-
-```text
-api_key_present: True
-model: gpt-5.5-codex
-codex_bin: codex
-sandbox: workspace-write
-```
-
-### 2. Start AAI
+### 2. Start AAI and create the hard workflow
 
 ```bash
 python -m aai_harness.cli start \
@@ -91,33 +108,53 @@ python -m aai_harness.cli start \
   --codex-model gpt-5.5-codex
 ```
 
-This resolves the target task, initializes the `.aai/` layout, initializes the campaign, optionally writes Codex config, and emits:
+`start` now creates both campaign state and:
 
 ```text
-.aai/campaigns/<campaign_id>/aai_start.json
-.aai/campaigns/<campaign_id>/runtime/start-<version>/runtime_trace.jsonl
-.aai/campaigns/<campaign_id>/runtime/start-<version>/environment.json
+.aai/campaigns/<campaign_id>/workflow.json
 ```
 
-If the API key environment variable is missing, the start report will say `READY_NO_CODEX_KEY` instead of failing silently.
+Check current state and allowed next actions:
 
-### 3. Bootstrap baseline evidence
+```bash
+python -m aai_harness.cli workflow-status \
+  --campaign-id campaign-demo
+```
+
+### 3. Bootstrap baseline
 
 ```bash
 python -m aai_harness.cli bootstrap \
   --config-path <definition>/config.toml \
-  --version 20260707T174000+0900
+  --version 20260707T175500+0900
+
+python -m aai_harness.cli workflow-advance \
+  --campaign-id campaign-demo \
+  --action bootstrap_baseline \
+  --artifact baseline_manifest=.aai/archive/<definition>/baseline/20260707T175500+0900/manifest.json
 ```
 
-This validates the target config, packs the current solution through `scripts/pack_solution.py`, snapshots config/source, and writes baseline evidence under:
+The explicit `workflow-advance` call records that Mode 0 completed and moves the hard workflow to `BASELINE_READY`.
+
+### 4. Plan the next round
+
+```bash
+python -m aai_harness.cli plan-round \
+  --campaign-id campaign-demo \
+  --objective "Optimize the candidate solution while preserving correctness and evidence requirements." \
+  --child-id child-0001
+```
+
+This writes:
 
 ```text
-.aai/archive/<definition>/baseline/<version>/
+.aai/campaigns/<campaign_id>/plans/plan-<version>.json
+.aai/campaigns/<campaign_id>/plans/plan-<version>.md
 ```
 
-Use `--run-local` only when `FIB_DATASET_PATH` is set and local CUDA evaluation is available.
+The JSON plan is the authoritative workflow artifact. It includes parent id, child ids, objective, constraints, executor backend, evaluator mode, memory inputs, and traps to avoid.
 
-### 4. Prepare a child workspace
+### 5. Prepare child workspace
 
 ```bash
 python -m aai_harness.cli prepare-child \
@@ -125,20 +162,12 @@ python -m aai_harness.cli prepare-child \
   --child-id child-0001 \
   --parent-id baseline \
   --config-path <definition>/config.toml
-```
 
-This creates:
-
-```text
-.aai/campaigns/<campaign_id>/children/<child_id>/
-  child.json
-  parent_solution/
-  workspace/
-    config.toml
-    solution/
-  ITERATIONS.md
-  trajectory.json
-  audit.json
+python -m aai_harness.cli workflow-advance \
+  --campaign-id campaign-demo \
+  --action prepare_child \
+  --child-id child-0001 \
+  --artifact child_json=.aai/campaigns/campaign-demo/children/child-0001/child.json
 ```
 
 The child agent should edit only:
@@ -147,25 +176,18 @@ The child agent should edit only:
 .aai/campaigns/<campaign_id>/children/<child_id>/workspace/solution/
 ```
 
-### 5. Run Codex against the child workspace
+### 6. Run Codex as executor backend
 
 ```bash
 python -m aai_harness.cli run-codex-agent \
   --campaign-id campaign-demo \
   --child-id child-0001 \
   --objective "Optimize the candidate solution while preserving correctness and evidence requirements."
-```
 
-This generates a Codex prompt if one is not provided, runs Codex non-interactively, and writes:
-
-```text
-children/<child_id>/codex_prompt.md
-children/<child_id>/codex_agent_run.json
-children/<child_id>/runtime/codex-<version>/runtime_trace.jsonl
-children/<child_id>/runtime/codex-<version>/environment.json
-children/<child_id>/runtime/codex-<version>/commands/codex_exec.stdout.log
-children/<child_id>/runtime/codex-<version>/commands/codex_exec.stderr.log
-children/<child_id>/runtime/codex-<version>/codex_final_message.md
+python -m aai_harness.cli workflow-advance \
+  --campaign-id campaign-demo \
+  --action run_agent \
+  --artifact agent_run_json=.aai/campaigns/campaign-demo/children/child-0001/codex_agent_run.json
 ```
 
 Default invocation shape:
@@ -174,344 +196,146 @@ Default invocation shape:
 codex exec --sandbox workspace-write --model <model> --json --ephemeral --output-last-message <path> <prompt>
 ```
 
-If your installed Codex CLI uses different flags, configure a custom template:
-
-```bash
-python -m aai_harness.cli configure-codex \
-  --model gpt-5.5-codex \
-  --api-key-env CODEX_API_KEY \
-  --command-template "codex exec --json --sandbox {sandbox} --model {model} --output-last-message {final_message_path} {prompt}"
-```
-
-Supported template placeholders:
-
-```text
-{codex_bin}
-{model}
-{sandbox}
-{prompt}
-{prompt_path}
-{final_message_path}
-```
-
-### 6. Evaluate, gate, and archive the Codex candidate
-
-Important: after `run-codex-agent`, use `--skip-prepare` so the Codex-modified workspace is not overwritten.
-
-```bash
-python -m aai_harness.cli run-child-round \
-  --campaign-id campaign-demo \
-  --child-id child-0001 \
-  --parent-id baseline \
-  --config-path <definition>/config.toml \
-  --mode modal-full \
-  --workers 10 \
-  --kind variant \
-  --skip-prepare
-```
-
-This runs the evaluator, refreshes `diff.patch`, writes `result.json`, writes `gate.json`, archives the run as a variant if the gate passes, otherwise archives it as failed evidence, and writes:
-
-```text
-children/<child_id>/child_eval.json
-children/<child_id>/round_report.json
-children/<child_id>/gate.json
-children/<child_id>/diff.patch
-children/<child_id>/result.json
-```
-
-For a cheap smoke test, use `--mode pack`. `pack` mode verifies packaging but does not produce promotion-quality benchmark evidence. The gate normally blocks it from becoming a variant and archives it as failed evidence.
-
-### 7. Summarize campaign state
-
-```bash
-python -m aai_harness.cli summarize-campaign \
-  --campaign-id campaign-demo
-```
-
-This scans all child `round_report.json` files and writes:
-
-```text
-.aai/campaigns/<campaign_id>/campaign_summary.json
-.aai/campaigns/<campaign_id>/campaign_summary.md
-```
-
-The summary includes child counts, gate pass counts, archived variants, archived failures, status counts, mode counts, repeated gate failure codes, best child by metric, and recommended next steps.
-
-### 8. Update long-term campaign memory
-
-```bash
-python -m aai_harness.cli update-campaign-memory \
-  --campaign-id campaign-demo
-```
-
-This appends campaign findings into:
-
-```text
-.aai/archive/<definition>/harness-ledger.md
-.aai/archive/<definition>/traps/TRAPS.md
-```
-
-It also writes:
-
-```text
-.aai/campaigns/<campaign_id>/memory_update.json
-```
-
-Use this when you want the next round to benefit from the previous round's failures, traps, and recommended next steps.
-
-### 9. Select the next parent
-
-```bash
-python -m aai_harness.cli select-parent \
-  --definition <definition>
-```
-
-This selects the best archived baseline/variant by the configured metric, defaulting to `avg_latency_ms`.
-
-## Full command reference
-
-### `configure-codex`
-
-Writes `.aai/codex_config.json`.
-
-```bash
-python -m aai_harness.cli configure-codex \
-  --model gpt-5.5-codex \
-  --api-key-env CODEX_API_KEY \
-  --codex-bin codex \
-  --sandbox workspace-write \
-  --timeout 7200
-```
-
-Use it when setting up Codex for the first time or changing model / binary / sandbox / timeout.
-
-### `codex-status`
-
-Prints redacted Codex config state.
-
-```bash
-python -m aai_harness.cli codex-status
-```
-
-Use it to confirm whether the API-key environment variable is present without exposing the key.
-
-### `start`
-
-Initializes an AAI campaign and optionally configures Codex.
-
-```bash
-python -m aai_harness.cli start \
-  --config-path <definition>/config.toml \
-  --campaign-id <campaign-id> \
-  --codex-model <model-name>
-```
-
-Use it as the main entrypoint for a new AAI campaign.
-
-### `bootstrap`
-
-Creates immutable baseline evidence for the current target solution.
-
-```bash
-python -m aai_harness.cli bootstrap \
-  --config-path <definition>/config.toml \
-  --version <timestamp-version>
-```
-
-Use it before optimization so later variants have a baseline to compare against.
-
-### `campaign-init`
-
-Creates only campaign state.
-
-```bash
-python -m aai_harness.cli campaign-init \
-  --definition <definition> \
-  --campaign-id <campaign-id>
-```
-
-Usually `start` is preferred because it also resolves the task and can configure Codex.
-
-### `prepare-child`
-
-Creates an isolated child workspace.
-
-```bash
-python -m aai_harness.cli prepare-child \
-  --campaign-id <campaign-id> \
-  --child-id <child-id> \
-  --parent-id <parent-id> \
-  --config-path <definition>/config.toml
-```
-
-Use it before running Codex or manually editing a candidate.
-
-### `write-codex-prompt`
-
-Writes a prompt file without running Codex.
-
-```bash
-python -m aai_harness.cli write-codex-prompt \
-  --campaign-id <campaign-id> \
-  --child-id <child-id> \
-  --objective "<objective>"
-```
-
-Use it for review/debugging or if another runner will invoke Codex manually.
-
-### `run-codex-agent`
-
-Runs Codex against a prepared child workspace.
-
-```bash
-python -m aai_harness.cli run-codex-agent \
-  --campaign-id <campaign-id> \
-  --child-id <child-id> \
-  --objective "<objective>"
-```
-
-Use it to let Codex edit `workspace/solution/` and produce agent runtime artifacts.
-
-### `run-child-eval`
-
-Runs evaluator scripts against an existing child workspace without archiving.
+### 7. Evaluate candidate
 
 ```bash
 python -m aai_harness.cli run-child-eval \
-  --campaign-id <campaign-id> \
-  --child-id <child-id> \
-  --mode pack
-```
-
-Modes:
-
-- `pack`: run `scripts/pack_solution.py` only;
-- `local`: run pack, then `scripts/run_local.py` if `FIB_DATASET_PATH` is set;
-- `modal-full`: run pack, then `scripts/run_modal_multiple_gpus.py`.
-
-Use it when debugging evaluation separately from archival.
-
-### `run-child-round`
-
-Runs evaluate → gate → archive for one child round. It can also prepare the workspace, but after Codex has edited a workspace, pass `--skip-prepare`.
-
-```bash
-python -m aai_harness.cli run-child-round \
-  --campaign-id <campaign-id> \
-  --child-id <child-id> \
-  --parent-id <parent-id> \
-  --config-path <definition>/config.toml \
+  --campaign-id campaign-demo \
+  --child-id child-0001 \
   --mode modal-full \
-  --kind variant \
-  --skip-prepare
+  --workers 10
+
+python -m aai_harness.cli workflow-advance \
+  --campaign-id campaign-demo \
+  --action evaluate_child \
+  --artifact child_eval_json=.aai/campaigns/campaign-demo/children/child-0001/child_eval.json \
+  --artifact result_json=.aai/campaigns/campaign-demo/children/child-0001/result.json \
+  --artifact diff_patch=.aai/campaigns/campaign-demo/children/child-0001/diff.patch
 ```
 
-Use it to turn a candidate into archived evidence.
-
-### `diff-child`
-
-Refreshes `diff.patch` between `parent_solution/` and `workspace/solution/`.
-
-```bash
-python -m aai_harness.cli diff-child \
-  --campaign-id <campaign-id> \
-  --child-id <child-id>
-```
-
-Use it when inspecting a candidate before evaluation.
-
-### `finalize-child`
-
-Writes `result.json` from child artifacts without archiving.
-
-```bash
-python -m aai_harness.cli finalize-child \
-  --campaign-id <campaign-id> \
-  --child-id <child-id>
-```
-
-Use it for manual/debug workflows.
-
-### `gate`
-
-Runs archive gate checks and writes `gate.json`.
-
-```bash
-python -m aai_harness.cli gate \
-  --evidence-json <path-to-result.json> \
-  --diff-patch <path-to-diff.patch>
-```
-
-Use it to validate evidence before promotion.
-
-### `archive` and `gate-archive`
-
-Archive existing evidence.
+### 8. Gate and archive
 
 ```bash
 python -m aai_harness.cli gate-archive \
-  --evidence-json <path-to-result.json> \
-  --diff-patch <path-to-diff.patch> \
+  --evidence-json .aai/campaigns/campaign-demo/children/child-0001/result.json \
+  --diff-patch .aai/campaigns/campaign-demo/children/child-0001/diff.patch \
   --kind variant
+
+python -m aai_harness.cli workflow-advance \
+  --campaign-id campaign-demo \
+  --action gate_archive \
+  --artifact gate_json=.aai/campaigns/campaign-demo/children/child-0001/gate.json \
+  --artifact archive_manifest=<archive-manifest-path>
 ```
 
-Use `gate-archive` for normal workflows; use `archive` only when a gate result already exists.
+Promotion is controlled by AAI gates, not by Codex.
 
-### `summarize-campaign`
-
-Writes campaign dashboard artifacts.
+### 9. Summarize and update memory
 
 ```bash
-python -m aai_harness.cli summarize-campaign \
-  --campaign-id <campaign-id> \
-  --metric avg_latency_ms
+python -m aai_harness.cli summarize-campaign --campaign-id campaign-demo
+python -m aai_harness.cli workflow-advance \
+  --campaign-id campaign-demo \
+  --action summarize_campaign \
+  --artifact campaign_summary_json=.aai/campaigns/campaign-demo/campaign_summary.json
+
+python -m aai_harness.cli update-campaign-memory --campaign-id campaign-demo
+python -m aai_harness.cli workflow-advance \
+  --campaign-id campaign-demo \
+  --action update_memory \
+  --artifact memory_update_json=.aai/campaigns/campaign-demo/memory_update.json
 ```
 
-Use it after one or more child rounds.
-
-### `update-campaign-memory`
-
-Appends summary findings into long-term memory.
+### 10. Admit into population and select parent
 
 ```bash
-python -m aai_harness.cli update-campaign-memory \
-  --campaign-id <campaign-id> \
-  --min-failure-count 1
-```
+python -m aai_harness.cli admit-population \
+  --campaign-id campaign-demo \
+  --child-id child-0001 \
+  --definition <definition>
 
-Options:
+python -m aai_harness.cli population-status \
+  --definition <definition>
 
-- `--definition`: provide definition manually if it cannot be inferred;
-- `--min-failure-count`: only write traps seen at least this many times;
-- `--no-traps`: update only `harness-ledger.md`.
-
-### `select-parent`
-
-Selects the best archived parent.
-
-```bash
 python -m aai_harness.cli select-parent \
-  --definition <definition> \
-  --metric avg_latency_ms
+  --definition <definition>
+
+python -m aai_harness.cli workflow-advance \
+  --campaign-id campaign-demo \
+  --action select_parent \
+  --artifact selected_parent=.aai/archive/<definition>/selected-parent.json
 ```
 
-Use it before starting the next child round.
+The population database is LoongFlow-inspired: all archived variants and failures are admitted as lineage evidence, while only gated variants can become best members.
 
-### `proposal-template` and `review-proposal`
+## Command reference for workflow additions
 
-Mode 3 harness-change workflow.
+### `workflow-init`
+
+Creates a hard workflow without running `start`.
 
 ```bash
-python -m aai_harness.cli proposal-template --campaign-id <campaign-id>
-python -m aai_harness.cli review-proposal --proposal <path-to-proposal.md>
+python -m aai_harness.cli workflow-init \
+  --campaign-id campaign-demo \
+  --definition <definition> \
+  --config-path <definition>/config.toml \
+  --planner-backend rule \
+  --executor-backend codex \
+  --evaluator-backend modal-full
 ```
 
-Use these only when evidence shows the harness itself needs changes.
+### `workflow-status`
+
+Prints current state, allowed actions, current parent/child, and workflow invariants.
+
+```bash
+python -m aai_harness.cli workflow-status --campaign-id campaign-demo
+```
+
+### `workflow-advance`
+
+Advances only along allowed transitions.
+
+```bash
+python -m aai_harness.cli workflow-advance \
+  --campaign-id campaign-demo \
+  --action plan_round \
+  --artifact plan_json=<path>
+```
+
+If the action is not valid from the current state, AAI raises an error.
+
+### `plan-round`
+
+Writes a structured planner decision.
+
+```bash
+python -m aai_harness.cli plan-round \
+  --campaign-id campaign-demo \
+  --objective "next optimization objective" \
+  --child-id child-0001
+```
+
+### `admit-population`
+
+Adds one child round to the population/checkpoint database.
+
+```bash
+python -m aai_harness.cli admit-population \
+  --campaign-id campaign-demo \
+  --child-id child-0001 \
+  --definition <definition>
+```
+
+### `population-status`
+
+Shows population members, best member, and checkpoint paths.
+
+```bash
+python -m aai_harness.cli population-status --definition <definition>
+```
 
 ## Runtime archive layout
-
-The CLI writes runtime state under `agent-assisted/.aai/`:
 
 ```text
 .aai/
@@ -520,73 +344,49 @@ The CLI writes runtime state under `agent-assisted/.aai/`:
     baseline/<version>/
     variants/variant-<version>/
     failed/failed-<version>/
+    population/
+      population.json
+      checkpoints/checkpoint-<version>/
     selected-parent.json
     traps/TRAPS.md
     harness-ledger.md
   campaigns/<campaign_id>/
+    workflow.json
+    plans/plan-<version>.json
+    plans/plan-<version>.md
     aai_start.json
     campaign.json
     campaign_summary.json
     campaign_summary.md
     memory_update.json
-    runtime/
-      start-<version>/
-        runtime_trace.jsonl
-        environment.json
     children/<child_id>/
       child.json
-      codex_prompt.md
       codex_agent_run.json
       child_eval.json
       round_report.json
       gate.json
       parent_solution/
-      workspace/
-        config.toml
-        solution/
-      logs/
+      workspace/config.toml
+      workspace/solution/
       runtime/
-        codex-<version>/
-          runtime_trace.jsonl
-          environment.json
-          commands/
-        eval-<version>/
-          runtime_trace.jsonl
-          environment.json
-          commands/
-      solution.json
-      benchmark_detailed_results.json
-      retained_run.log
-      ITERATIONS.md
-      trajectory.json
-      audit.json
       diff.patch
       result.json
-    prompts/
-    proposals/
 ```
 
-## Runtime logging
+## Relationship to LoongFlow
 
-Every Codex agent and child evaluator process gets a runtime directory containing:
+AAI borrows the useful structure of the original full-agent design:
 
-- `runtime_trace.jsonl`: append-only structured events, command start/end, return codes, durations, and artifact paths;
-- `environment.json`: redacted environment and platform snapshot;
-- `commands/*.stdout.log` and `commands/*.stderr.log`: raw command output for debugging.
+- planner consumes population / summaries / traps;
+- executor spawns bounded child candidates;
+- evaluator is the promotion gate;
+- summarizer distills outcomes;
+- checkpoint database preserves lineage and negative evidence.
 
-The evaluator also mirrors command stdout/stderr into the existing child `logs/` directory for backwards compatibility.
+But AAI replaces the workflow and implementation details with your AAI flow:
 
-## Gate policy
-
-The default archive gate checks for failed benchmark status, protected path edits, suspicious diff patterns, incomplete evidence, and evidence schema compatibility. Warnings are emitted for edits outside the default `solution/` scope. Errors block promotion as a variant.
-
-## Relationship to evaluator scripts
-
-AAI keeps using these existing evaluator scripts as backends:
-
-- `scripts/pack_solution.py`
-- `scripts/run_local.py`
-- `scripts/run_modal_single.py`
-- `scripts/run_modal_multiple_gpus.py`
-
-AAI harness code calls these scripts and standardizes evidence, gates, archive layout, campaign state, workspace isolation, Codex execution, diff capture, child evaluation, child-round orchestration, campaign summaries, memory updates, runtime logs, and proposal review around them.
+- draw.io stages become explicit workflow states;
+- Codex is only an executor backend;
+- AAI gates and archive memory are authoritative;
+- target packages are external, not vendored historical kernels;
+- LoongFlow can later be added as a planner/backend adapter, not as the whole base repository.
