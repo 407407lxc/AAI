@@ -1,5 +1,26 @@
 # AAI Harness Modification Log
 
+## Version `20260707T170312+0900`
+
+Timestamp timezone: Asia/Tokyo.
+
+### Changes
+
+- Added `summary.py` for campaign-level rollup over child `round_report.json` files.
+- Added `summarize-campaign` CLI command.
+- `summarize-campaign` writes:
+  - `campaign_summary.json` for machine-readable campaign state;
+  - `campaign_summary.md` for a human-readable campaign dashboard.
+- Added summary counters for total children, total round reports, gate passes, archived variants, archived failures, archived baselines, missing round reports, status counts, mode counts, archive-kind counts, and repeated gate failure codes.
+- Added best-child selection by metric among gated archived variants.
+- Added recommended next steps based on campaign state, gate failure codes, and missing round reports.
+- Updated README and design plan documentation for campaign summaries.
+
+### Notes
+
+- The summary command is read-only with respect to child evidence; it only writes campaign-level summary artifacts.
+- The default metric is `avg_latency_ms`, but the CLI accepts `--metric` for other numeric evidence metrics.
+
 ## Version `20260707T165028+0900`
 
 Timestamp timezone: Asia/Tokyo.
