@@ -2,41 +2,191 @@
 
 This package implements the Agentic AI Infrastructure (AAI) harness layer for the FlashInfer contest package. It wraps the existing `agent-assisted/scripts/` evaluation tools instead of replacing them.
 
-The design follows the uploaded draw.io workflow:
+The harness provides:
 
-1. **Stage -1 — task parsing / feasibility**: resolve `config.toml`, solution directory, runtime, hardware, metrics, quality gates, and credential policy.
-2. **Mode 0 — bootstrap build / first baseline**: validate the target, pack the current solution, snapshot config/source, optionally run a local baseline, and write immutable baseline evidence.
-3. **Stage 1 — bounded child optimization**: child workers edit an isolated candidate workspace and emit `ITERATIONS.md`, `trajectory.json`, `result.json`, `diff.patch`, stdout/stderr logs, and audit findings.
-4. **Stage 2 — Master Campaign**: master reads archive memory, selects parent, writes a narrow prompt, gates evidence, archives variants or failures, updates long-term memory, and summarizes campaign state.
-5. **Mode 3 — harness proposal review**: harness changes require evidence-backed `PROPOSALS.md` and master review.
+- Codex-backed child-agent execution;
+- isolated child workspaces;
+- detailed runtime traces for debugging;
+- evaluator wrappers around existing local / Modal scripts;
+- evidence schemas, archive gates, variant/failed archival, campaign summaries, TRAPS, and harness ledger updates.
 
-## Invocation
+## Prerequisites
 
-Run commands from `agent-assisted/`:
+Run commands from `agent-assisted/` unless noted otherwise.
+
+You need:
+
+- Python environment that can import and run the existing FlashInfer contest scripts;
+- Codex CLI installed and available as `codex` or another configured binary;
+- an API key exported through an environment variable;
+- Modal credentials and trace volume only when running `--mode modal-full`.
+
+Example:
 
 ```bash
+cd agent-assisted
 export CODEX_API_KEY=<your OpenAI API key>
+```
 
+AAI stores the API-key environment variable name, not the secret value. Runtime environment snapshots redact variables whose names look like keys, tokens, secrets, passwords, auth values, or credentials.
+
+## Quick start: Codex-backed AAI round
+
+This is the normal startup flow when using Codex as the AAI child agent.
+
+```bash
+cd agent-assisted
+export CODEX_API_KEY=<your OpenAI API key>
+```
+
+### 1. Configure Codex
+
+```bash
 python -m aai_harness.cli configure-codex \
   --model gpt-5.5-codex \
   --api-key-env CODEX_API_KEY
+```
 
+This writes:
+
+```text
+.aai/codex_config.json
+```
+
+It records the model name, Codex binary, sandbox mode, timeout, and API-key environment variable name. It does not record the API key itself.
+
+Check the redacted status:
+
+```bash
+python -m aai_harness.cli codex-status
+```
+
+Expected useful fields:
+
+```text
+api_key_present: True
+model: gpt-5.5-codex
+codex_bin: codex
+sandbox: workspace-write
+```
+
+### 2. Start AAI
+
+```bash
 python -m aai_harness.cli start \
   --config-path gdn_decode_qk4_v8_d128_k_last/config.toml \
   --campaign-id campaign-20260707T172000+0900 \
   --codex-model gpt-5.5-codex
+```
 
+This resolves the target task, initializes the `.aai/` layout, initializes the campaign, optionally writes Codex config, and emits:
+
+```text
+.aai/campaigns/<campaign_id>/aai_start.json
+.aai/campaigns/<campaign_id>/runtime/start-<version>/runtime_trace.jsonl
+.aai/campaigns/<campaign_id>/runtime/start-<version>/environment.json
+```
+
+If the API key environment variable is missing, the start report will say `READY_NO_CODEX_KEY` instead of failing silently.
+
+### 3. Bootstrap baseline evidence
+
+```bash
+python -m aai_harness.cli bootstrap \
+  --config-path gdn_decode_qk4_v8_d128_k_last/config.toml \
+  --version 20260707T172000+0900
+```
+
+This validates the target config, packs the current solution through `scripts/pack_solution.py`, snapshots config/source, and writes baseline evidence under:
+
+```text
+.aai/archive/<definition>/baseline/<version>/
+```
+
+Use `--run-local` only when `FIB_DATASET_PATH` is set and local CUDA evaluation is available.
+
+### 4. Prepare a child workspace
+
+```bash
 python -m aai_harness.cli prepare-child \
   --campaign-id campaign-20260707T172000+0900 \
   --child-id child-0001 \
   --parent-id baseline \
   --config-path gdn_decode_qk4_v8_d128_k_last/config.toml
+```
 
+This creates:
+
+```text
+.aai/campaigns/<campaign_id>/children/<child_id>/
+  child.json
+  parent_solution/
+  workspace/
+    config.toml
+    solution/
+  ITERATIONS.md
+  trajectory.json
+  audit.json
+```
+
+The child agent should edit only:
+
+```text
+.aai/campaigns/<campaign_id>/children/<child_id>/workspace/solution/
+```
+
+### 5. Run Codex against the child workspace
+
+```bash
 python -m aai_harness.cli run-codex-agent \
   --campaign-id campaign-20260707T172000+0900 \
   --child-id child-0001 \
   --objective "Optimize the candidate solution while preserving correctness and evidence requirements."
+```
 
+This generates a Codex prompt if one is not provided, runs Codex non-interactively, and writes:
+
+```text
+children/<child_id>/codex_prompt.md
+children/<child_id>/codex_agent_run.json
+children/<child_id>/runtime/codex-<version>/runtime_trace.jsonl
+children/<child_id>/runtime/codex-<version>/environment.json
+children/<child_id>/runtime/codex-<version>/commands/codex_exec.stdout.log
+children/<child_id>/runtime/codex-<version>/commands/codex_exec.stderr.log
+children/<child_id>/runtime/codex-<version>/codex_final_message.md
+```
+
+Default invocation shape:
+
+```text
+codex exec --sandbox workspace-write --model <model> --json --ephemeral --output-last-message <path> <prompt>
+```
+
+If your installed Codex CLI uses different flags, configure a custom template:
+
+```bash
+python -m aai_harness.cli configure-codex \
+  --model gpt-5.5-codex \
+  --api-key-env CODEX_API_KEY \
+  --command-template "codex exec --json --sandbox {sandbox} --model {model} --output-last-message {final_message_path} {prompt}"
+```
+
+Supported template placeholders:
+
+```text
+{codex_bin}
+{model}
+{sandbox}
+{prompt}
+{prompt_path}
+{final_message_path}
+```
+
+### 6. Evaluate, gate, and archive the Codex candidate
+
+Important: after `run-codex-agent`, use `--skip-prepare` so the Codex-modified workspace is not overwritten.
+
+```bash
 python -m aai_harness.cli run-child-round \
   --campaign-id campaign-20260707T172000+0900 \
   --child-id child-0001 \
@@ -44,30 +194,321 @@ python -m aai_harness.cli run-child-round \
   --config-path gdn_decode_qk4_v8_d128_k_last/config.toml \
   --mode modal-full \
   --workers 10 \
+  --kind variant \
+  --skip-prepare
+```
+
+This runs the evaluator, refreshes `diff.patch`, writes `result.json`, writes `gate.json`, archives the run as a variant if the gate passes, otherwise archives it as failed evidence, and writes:
+
+```text
+children/<child_id>/child_eval.json
+children/<child_id>/round_report.json
+children/<child_id>/gate.json
+children/<child_id>/diff.patch
+children/<child_id>/result.json
+```
+
+For a cheap smoke test, use:
+
+```bash
+python -m aai_harness.cli run-child-round \
+  --campaign-id campaign-20260707T172000+0900 \
+  --child-id child-0001 \
+  --parent-id baseline \
+  --config-path gdn_decode_qk4_v8_d128_k_last/config.toml \
+  --mode pack \
+  --kind variant \
+  --skip-prepare
+```
+
+`pack` mode verifies packaging but does not produce promotion-quality benchmark evidence. The gate normally blocks it from becoming a variant and archives it as failed evidence.
+
+### 7. Summarize campaign state
+
+```bash
+python -m aai_harness.cli summarize-campaign \
+  --campaign-id campaign-20260707T172000+0900
+```
+
+This scans all child `round_report.json` files and writes:
+
+```text
+.aai/campaigns/<campaign_id>/campaign_summary.json
+.aai/campaigns/<campaign_id>/campaign_summary.md
+```
+
+The summary includes child counts, gate pass counts, archived variants, archived failures, status counts, mode counts, repeated gate failure codes, best child by metric, and recommended next steps.
+
+### 8. Update long-term campaign memory
+
+```bash
+python -m aai_harness.cli update-campaign-memory \
+  --campaign-id campaign-20260707T172000+0900
+```
+
+This appends campaign findings into:
+
+```text
+.aai/archive/<definition>/harness-ledger.md
+.aai/archive/<definition>/traps/TRAPS.md
+```
+
+It also writes:
+
+```text
+.aai/campaigns/<campaign_id>/memory_update.json
+```
+
+Use this when you want the next round to benefit from the previous round's failures, traps, and recommended next steps.
+
+### 9. Select the next parent
+
+```bash
+python -m aai_harness.cli select-parent \
+  --definition gdn_decode_qk4_v8_d128_k_last
+```
+
+This selects the best archived baseline/variant by the configured metric, defaulting to `avg_latency_ms`.
+
+## Full command reference
+
+### `configure-codex`
+
+Writes `.aai/codex_config.json`.
+
+```bash
+python -m aai_harness.cli configure-codex \
+  --model gpt-5.5-codex \
+  --api-key-env CODEX_API_KEY \
+  --codex-bin codex \
+  --sandbox workspace-write \
+  --timeout 7200
+```
+
+Use it when setting up Codex for the first time or changing model / binary / sandbox / timeout.
+
+### `codex-status`
+
+Prints redacted Codex config state.
+
+```bash
+python -m aai_harness.cli codex-status
+```
+
+Use it to confirm whether the API-key environment variable is present without exposing the key.
+
+### `start`
+
+Initializes an AAI campaign and optionally configures Codex.
+
+```bash
+python -m aai_harness.cli start \
+  --config-path <definition>/config.toml \
+  --campaign-id <campaign-id> \
+  --codex-model <model-name>
+```
+
+Use it as the main entrypoint for a new AAI campaign.
+
+### `bootstrap`
+
+Creates immutable baseline evidence for the current repository solution.
+
+```bash
+python -m aai_harness.cli bootstrap \
+  --config-path <definition>/config.toml \
+  --version <timestamp-version>
+```
+
+Use it before optimization so later variants have a baseline to compare against.
+
+### `campaign-init`
+
+Creates only campaign state.
+
+```bash
+python -m aai_harness.cli campaign-init \
+  --definition <definition> \
+  --campaign-id <campaign-id>
+```
+
+Usually `start` is preferred because it also resolves the task and can configure Codex.
+
+### `prepare-child`
+
+Creates an isolated child workspace.
+
+```bash
+python -m aai_harness.cli prepare-child \
+  --campaign-id <campaign-id> \
+  --child-id <child-id> \
+  --parent-id <parent-id> \
+  --config-path <definition>/config.toml
+```
+
+Use it before running Codex or manually editing a candidate.
+
+### `write-codex-prompt`
+
+Writes a prompt file without running Codex.
+
+```bash
+python -m aai_harness.cli write-codex-prompt \
+  --campaign-id <campaign-id> \
+  --child-id <child-id> \
+  --objective "<objective>"
+```
+
+Use it for review/debugging or if another runner will invoke Codex manually.
+
+### `run-codex-agent`
+
+Runs Codex against a prepared child workspace.
+
+```bash
+python -m aai_harness.cli run-codex-agent \
+  --campaign-id <campaign-id> \
+  --child-id <child-id> \
+  --objective "<objective>"
+```
+
+Use it to let Codex edit `workspace/solution/` and produce agent runtime artifacts.
+
+### `run-child-eval`
+
+Runs evaluator scripts against an existing child workspace without archiving.
+
+```bash
+python -m aai_harness.cli run-child-eval \
+  --campaign-id <campaign-id> \
+  --child-id <child-id> \
+  --mode pack
+```
+
+Modes:
+
+- `pack`: run `scripts/pack_solution.py` only;
+- `local`: run pack, then `scripts/run_local.py` if `FIB_DATASET_PATH` is set;
+- `modal-full`: run pack, then `scripts/run_modal_multiple_gpus.py`.
+
+Use it when debugging evaluation separately from archival.
+
+### `run-child-round`
+
+Runs evaluate → gate → archive for one child round. It can also prepare the workspace, but after Codex has edited a workspace, pass `--skip-prepare`.
+
+```bash
+python -m aai_harness.cli run-child-round \
+  --campaign-id <campaign-id> \
+  --child-id <child-id> \
+  --parent-id <parent-id> \
+  --config-path <definition>/config.toml \
+  --mode modal-full \
+  --kind variant \
+  --skip-prepare
+```
+
+Use it to turn a candidate into archived evidence.
+
+### `diff-child`
+
+Refreshes `diff.patch` between `parent_solution/` and `workspace/solution/`.
+
+```bash
+python -m aai_harness.cli diff-child \
+  --campaign-id <campaign-id> \
+  --child-id <child-id>
+```
+
+Use it when inspecting a candidate before evaluation.
+
+### `finalize-child`
+
+Writes `result.json` from child artifacts without archiving.
+
+```bash
+python -m aai_harness.cli finalize-child \
+  --campaign-id <campaign-id> \
+  --child-id <child-id>
+```
+
+Use it for manual/debug workflows.
+
+### `gate`
+
+Runs archive gate checks and writes `gate.json`.
+
+```bash
+python -m aai_harness.cli gate \
+  --evidence-json <path-to-result.json> \
+  --diff-patch <path-to-diff.patch>
+```
+
+Use it to validate evidence before promotion.
+
+### `archive` and `gate-archive`
+
+Archive existing evidence.
+
+```bash
+python -m aai_harness.cli gate-archive \
+  --evidence-json <path-to-result.json> \
+  --diff-patch <path-to-diff.patch> \
   --kind variant
 ```
 
-From the repository root, prefix the command with `PYTHONPATH=agent-assisted`:
+Use `gate-archive` for normal workflows; use `archive` only when a gate result already exists.
+
+### `summarize-campaign`
+
+Writes campaign dashboard artifacts.
 
 ```bash
-PYTHONPATH=agent-assisted python -m aai_harness.cli --help
+python -m aai_harness.cli summarize-campaign \
+  --campaign-id <campaign-id> \
+  --metric avg_latency_ms
 ```
 
-## Timestamp versions
+Use it after one or more child rounds.
 
-All persistent AAI records use timestamp versions in the form:
+### `update-campaign-memory`
 
-```text
-YYYYMMDDTHHMMSS+ZZZZ
+Appends summary findings into long-term memory.
+
+```bash
+python -m aai_harness.cli update-campaign-memory \
+  --campaign-id <campaign-id> \
+  --min-failure-count 1
 ```
 
-Example:
+Options:
 
-```text
-20260707T172000+0900
+- `--definition`: provide definition manually if it cannot be inferred;
+- `--min-failure-count`: only write traps seen at least this many times;
+- `--no-traps`: update only `harness-ledger.md`.
+
+### `select-parent`
+
+Selects the best archived parent.
+
+```bash
+python -m aai_harness.cli select-parent \
+  --definition <definition> \
+  --metric avg_latency_ms
 ```
 
-This is used for bootstrap baselines, archived variants, failed runs, proposal files, child workspaces, campaign summaries, memory updates, runtime logs, and harness ledgers.
+Use it before starting the next child round.
+
+### `proposal-template` and `review-proposal`
+
+Mode 3 harness-change workflow.
+
+```bash
+python -m aai_harness.cli proposal-template --campaign-id <campaign-id>
+python -m aai_harness.cli review-proposal --proposal <path-to-proposal.md>
+```
+
+Use these only when evidence shows the harness itself needs changes.
 
 ## Runtime archive layout
 
@@ -126,60 +567,12 @@ The CLI writes runtime state under `agent-assisted/.aai/`:
     proposals/
 ```
 
-`.aai/` is intended for reproducible campaign evidence. Do not archive secrets or raw credentials.
-
-## Codex adapter
-
-AAI can use OpenAI Codex CLI as its child agent backend. Configure it once:
-
-```bash
-export CODEX_API_KEY=<your OpenAI API key>
-python -m aai_harness.cli configure-codex --model gpt-5.5-codex --api-key-env CODEX_API_KEY
-python -m aai_harness.cli codex-status
-```
-
-`configure-codex` writes `.aai/codex_config.json`; it records the environment variable name, not the secret value. Runtime logs redact environment variables whose names look like keys, tokens, secrets, passwords, or credentials.
-
-The default adapter invokes Codex through non-interactive mode:
-
-```text
-codex exec --sandbox workspace-write --model <model> --json --ephemeral --output-last-message <path> <prompt>
-```
-
-If your installed Codex CLI uses different flags, pass `--command-template` to `configure-codex` and use placeholders such as `{codex_bin}`, `{model}`, `{sandbox}`, `{prompt}`, `{prompt_path}`, and `{final_message_path}`.
-
-## Child workspace lifecycle
-
-A child workspace starts from a parent snapshot and creates a mutable candidate copy. The worker edits only the workspace solution copy:
-
-```text
-.aai/campaigns/<campaign_id>/children/<child_id>/workspace/solution/
-```
-
-`run-codex-agent` writes `codex_agent_run.json`, Codex JSONL/stdout/stderr logs, a final message file, and a runtime trace. `run-child-round` remains the high-level evaluator/archive command after the Codex-backed child has produced a candidate.
-
-Use `--mode pack` for smoke tests. Use `--mode modal-full` for promotion-quality evidence.
-
-## Campaign summary and memory
-
-`summarize-campaign` reads all child `round_report.json` files and writes:
-
-- `campaign_summary.json`: machine-readable counters, child rows, best metric, gate failure codes, and recommended next steps.
-- `campaign_summary.md`: human-readable campaign dashboard.
-
-`update-campaign-memory` then appends summary findings to the long-term archive memory:
-
-- `archive/<definition>/harness-ledger.md`: compact campaign summary and recommended next steps.
-- `archive/<definition>/traps/TRAPS.md`: repeated gate failures and failed child statuses that should be avoided in later rounds.
-
-The command writes `memory_update.json` under the campaign directory so the memory mutation itself is auditable.
-
 ## Runtime logging
 
 Every Codex agent and child evaluator process gets a runtime directory containing:
 
-- `runtime_trace.jsonl`: append-only structured events, command start/end, return codes, durations, and artifact paths.
-- `environment.json`: redacted environment and platform snapshot.
+- `runtime_trace.jsonl`: append-only structured events, command start/end, return codes, durations, and artifact paths;
+- `environment.json`: redacted environment and platform snapshot;
 - `commands/*.stdout.log` and `commands/*.stderr.log`: raw command output for debugging.
 
 The evaluator also mirrors command stdout/stderr into the existing child `logs/` directory for backwards compatibility.
