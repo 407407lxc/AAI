@@ -7,7 +7,7 @@ The design follows the uploaded draw.io workflow:
 1. **Stage -1 — task parsing / feasibility**: resolve `config.toml`, solution directory, runtime, hardware, metrics, quality gates, and credential policy.
 2. **Mode 0 — bootstrap build / first baseline**: validate the target, pack the current solution, snapshot config/source, optionally run a local baseline, and write immutable baseline evidence.
 3. **Stage 1 — bounded child optimization**: child workers edit an isolated candidate workspace and emit `ITERATIONS.md`, `trajectory.json`, `result.json`, `diff.patch`, stdout/stderr logs, and audit findings.
-4. **Stage 2 — Master Campaign**: master reads archive memory, selects parent, writes a narrow prompt, gates evidence, archives variants or failures, and updates long-term memory.
+4. **Stage 2 — Master Campaign**: master reads archive memory, selects parent, writes a narrow prompt, gates evidence, archives variants or failures, updates long-term memory, and summarizes campaign state.
 5. **Mode 3 — harness proposal review**: harness changes require evidence-backed `PROPOSALS.md` and master review.
 
 ## Invocation
@@ -17,24 +17,27 @@ Run commands from `agent-assisted/`:
 ```bash
 python -m aai_harness.cli init \
   --config-path gdn_decode_qk4_v8_d128_k_last/config.toml \
-  --campaign-id campaign-20260707T165028+0900
+  --campaign-id campaign-20260707T170312+0900
 
 python -m aai_harness.cli bootstrap \
   --config-path gdn_decode_qk4_v8_d128_k_last/config.toml \
-  --version 20260707T165028+0900
+  --version 20260707T170312+0900
 
 python -m aai_harness.cli campaign-init \
   --definition gdn_decode_qk4_v8_d128_k_last \
-  --campaign-id campaign-20260707T165028+0900
+  --campaign-id campaign-20260707T170312+0900
 
 python -m aai_harness.cli run-child-round \
-  --campaign-id campaign-20260707T165028+0900 \
+  --campaign-id campaign-20260707T170312+0900 \
   --child-id child-0001 \
   --parent-id baseline \
   --config-path gdn_decode_qk4_v8_d128_k_last/config.toml \
   --mode modal-full \
   --workers 10 \
   --kind variant
+
+python -m aai_harness.cli summarize-campaign \
+  --campaign-id campaign-20260707T170312+0900
 ```
 
 For lower-level debugging, you can still run the individual steps:
@@ -62,10 +65,10 @@ YYYYMMDDTHHMMSS+ZZZZ
 Example:
 
 ```text
-20260707T165028+0900
+20260707T170312+0900
 ```
 
-This is used for bootstrap baselines, archived variants, failed runs, proposal files, child workspaces, and harness ledgers.
+This is used for bootstrap baselines, archived variants, failed runs, proposal files, child workspaces, campaign summaries, and harness ledgers.
 
 ## Runtime archive layout
 
@@ -82,6 +85,8 @@ The CLI writes runtime state under `agent-assisted/.aai/`:
     harness-ledger.md
   campaigns/<campaign_id>/
     campaign.json
+    campaign_summary.json
+    campaign_summary.md
     children/<child_id>/
       child.json
       child_eval.json
@@ -118,6 +123,15 @@ A child workspace starts from a parent snapshot and creates a mutable candidate 
 
 Use `--mode pack` for smoke tests. Use `--mode modal-full` for promotion-quality evidence.
 
+## Campaign summary
+
+`summarize-campaign` reads all child `round_report.json` files and writes:
+
+- `campaign_summary.json`: machine-readable counters, child rows, best metric, gate failure codes, and recommended next steps.
+- `campaign_summary.md`: human-readable campaign dashboard.
+
+The summary reports total children, archived variants, failed runs, gate pass counts, status counts, mode counts, archive-kind counts, and repeated gate failure codes.
+
 ## Gate policy
 
 The default archive gate checks for failed benchmark status, protected path edits, suspicious diff patterns, incomplete evidence, and evidence schema compatibility. Warnings are emitted for edits outside the default `solution/` scope. Errors block promotion as a variant.
@@ -131,4 +145,4 @@ The existing scripts remain the evaluator source of truth:
 - `scripts/run_modal_single.py`
 - `scripts/run_modal_multiple_gpus.py`
 
-AAI harness code calls these scripts and standardizes evidence, gates, archive layout, campaign state, workspace isolation, diff capture, child evaluation, child-round orchestration, and proposal review around them.
+AAI harness code calls these scripts and standardizes evidence, gates, archive layout, campaign state, workspace isolation, diff capture, child evaluation, child-round orchestration, campaign summaries, and proposal review around them.
