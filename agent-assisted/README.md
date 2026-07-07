@@ -16,7 +16,8 @@ For future agents taking over this project, read these first:
 
 1. [`AAI_DEVELOPMENT_GUIDE.md`](./AAI_DEVELOPMENT_GUIDE.md): detailed development handoff, goals, current progress, risks, and next tasks.
 2. [`AAI_HARNESS.md`](./AAI_HARNESS.md): design mapping from the user workflow to implementation modules.
-3. [`aai_harness/README.md`](./aai_harness/README.md): startup guide, command reference, and runtime layout.
+3. [`AAI_FULL_AGENT_STYLE.md`](./AAI_FULL_AGENT_STYLE.md): how AAI mirrors the original full-agent / LoongFlow trace schema.
+4. [`aai_harness/README.md`](./aai_harness/README.md): startup guide, command reference, and runtime layout.
 
 ## Layout
 
@@ -24,6 +25,7 @@ For future agents taking over this project, read these first:
 .
 |-- README.md
 |-- AAI_DEVELOPMENT_GUIDE.md
+|-- AAI_FULL_AGENT_STYLE.md
 |-- AAI_HARNESS.md
 |-- scripts/
 `-- aai_harness/
@@ -34,6 +36,7 @@ Important paths:
 - `aai_harness/`: AAI harness Python package, CLI, Codex adapter, runtime logging, archive gates, campaign summary, and memory update logic.
 - `scripts/`: existing pack/local/Modal evaluator scripts that AAI uses for candidate evaluation.
 - `AAI_HARNESS.md`: design note mapping the AAI workflow to the implementation modules.
+- `AAI_FULL_AGENT_STYLE.md`: implementation note for the full-agent-style trace mirror.
 - `AAI_DEVELOPMENT_GUIDE.md`: handoff document for future agents and developers.
 
 ## Codex-backed quick start
@@ -58,6 +61,26 @@ python -m aai_harness.cli workflow-status \
 
 AAI now uses a hard workflow state machine. Do not treat Codex as the global workflow controller; Codex is an executor backend for bounded child workspaces.
 
+## Full-agent-style trace mirror
+
+After one or more AAI rounds, mirror current artifacts into the original full-agent-style trace layout:
+
+```bash
+python -m aai_harness.full_agent_trace_cli sync \
+  --campaign-id campaign-demo \
+  --definition <definition> \
+  --iteration 1 \
+  --child-id child-0001
+```
+
+This writes under:
+
+```text
+.aai/campaigns/<campaign_id>/full_agent_trace/
+```
+
+It mirrors planner, executor, evaluator, summarizer, and checkpoint artifacts without restoring old historical full-agent traces.
+
 ## Command meanings
 
 - `configure-codex`: records Codex model, binary, sandbox, timeout, and API-key environment variable name in `.aai/codex_config.json`; it does not store the API key.
@@ -75,6 +98,7 @@ AAI now uses a hard workflow state machine. Do not treat Codex as the global wor
 - `update-campaign-memory`: appends campaign findings into `harness-ledger.md` and repeated failures into `TRAPS.md`.
 - `admit-population`: admits a child round into population/checkpoint lineage memory.
 - `population-status`: prints current population/checkpoint database state.
+- `full_agent_trace_cli sync`: mirrors AAI artifacts into a full-agent-style trace tree.
 - `select-parent`: picks the best archived baseline/variant for the next round.
 
 From the repository root:
