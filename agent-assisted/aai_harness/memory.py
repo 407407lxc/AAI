@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from .archive import update_ledger, update_traps
-from .paths import archive_root, campaign_root
+from .paths import campaign_root
 from .schemas import now_version, read_json, write_json
 from .summary import summarize_campaign
 
