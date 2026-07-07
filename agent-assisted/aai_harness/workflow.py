@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
@@ -262,5 +262,5 @@ def workflow_status(campaign_id: str) -> dict[str, Any]:
         "child_id": spec.child_id,
         "allowed_actions": [t.action for t in allowed_transitions(spec)],
         "invariants": spec.invariants,
-        "events": [event.__dict__ for event in spec.events],
+        "events": [asdict(event) for event in spec.events],
     }
