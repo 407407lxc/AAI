@@ -1,14 +1,26 @@
 # AAI Harness Workflow Layer
 
-This package implements the Agentic AI Infrastructure (AAI) harness layer for the FlashInfer contest package. It wraps the existing `agent-assisted/scripts/` evaluation tools instead of replacing them.
+This package implements the Agentic AI Infrastructure (AAI) harness layer. It is now AAI-only: historical retained kernels, legacy agent skills, reports, and full-agent traces are not vendored in this branch.
 
-The harness provides:
+AAI expects a target package to be provided through a `config.toml` path:
 
-- Codex-backed child-agent execution;
-- isolated child workspaces;
-- detailed runtime traces for debugging;
-- evaluator wrappers around existing local / Modal scripts;
-- evidence schemas, archive gates, variant/failed archival, campaign summaries, TRAPS, and harness ledger updates.
+```text
+<definition>/config.toml
+```
+
+The target package supplies the solution directory and entry point consumed by the evaluator scripts.
+
+## What AAI provides
+
+- Codex-backed child-agent execution.
+- Isolated child workspaces.
+- Detailed runtime traces for debugging.
+- Evaluator wrappers around pack/local/Modal scripts.
+- Evidence schemas and archive gates.
+- Variant/failed archival.
+- Campaign summaries.
+- Long-term memory through `harness-ledger.md` and `TRAPS.md`.
+- Mode 3 evidence-backed proposal review for harness changes.
 
 ## Prerequisites
 
@@ -16,7 +28,7 @@ Run commands from `agent-assisted/` unless noted otherwise.
 
 You need:
 
-- Python environment that can import and run the existing FlashInfer contest scripts;
+- Python environment that can import and run the evaluator scripts;
 - Codex CLI installed and available as `codex` or another configured binary;
 - an API key exported through an environment variable;
 - Modal credentials and trace volume only when running `--mode modal-full`.
@@ -74,8 +86,8 @@ sandbox: workspace-write
 
 ```bash
 python -m aai_harness.cli start \
-  --config-path gdn_decode_qk4_v8_d128_k_last/config.toml \
-  --campaign-id campaign-20260707T172000+0900 \
+  --config-path <definition>/config.toml \
+  --campaign-id campaign-demo \
   --codex-model gpt-5.5-codex
 ```
 
@@ -93,8 +105,8 @@ If the API key environment variable is missing, the start report will say `READY
 
 ```bash
 python -m aai_harness.cli bootstrap \
-  --config-path gdn_decode_qk4_v8_d128_k_last/config.toml \
-  --version 20260707T172000+0900
+  --config-path <definition>/config.toml \
+  --version 20260707T174000+0900
 ```
 
 This validates the target config, packs the current solution through `scripts/pack_solution.py`, snapshots config/source, and writes baseline evidence under:
@@ -109,10 +121,10 @@ Use `--run-local` only when `FIB_DATASET_PATH` is set and local CUDA evaluation 
 
 ```bash
 python -m aai_harness.cli prepare-child \
-  --campaign-id campaign-20260707T172000+0900 \
+  --campaign-id campaign-demo \
   --child-id child-0001 \
   --parent-id baseline \
-  --config-path gdn_decode_qk4_v8_d128_k_last/config.toml
+  --config-path <definition>/config.toml
 ```
 
 This creates:
@@ -139,7 +151,7 @@ The child agent should edit only:
 
 ```bash
 python -m aai_harness.cli run-codex-agent \
-  --campaign-id campaign-20260707T172000+0900 \
+  --campaign-id campaign-demo \
   --child-id child-0001 \
   --objective "Optimize the candidate solution while preserving correctness and evidence requirements."
 ```
@@ -188,10 +200,10 @@ Important: after `run-codex-agent`, use `--skip-prepare` so the Codex-modified w
 
 ```bash
 python -m aai_harness.cli run-child-round \
-  --campaign-id campaign-20260707T172000+0900 \
+  --campaign-id campaign-demo \
   --child-id child-0001 \
   --parent-id baseline \
-  --config-path gdn_decode_qk4_v8_d128_k_last/config.toml \
+  --config-path <definition>/config.toml \
   --mode modal-full \
   --workers 10 \
   --kind variant \
@@ -208,26 +220,13 @@ children/<child_id>/diff.patch
 children/<child_id>/result.json
 ```
 
-For a cheap smoke test, use:
-
-```bash
-python -m aai_harness.cli run-child-round \
-  --campaign-id campaign-20260707T172000+0900 \
-  --child-id child-0001 \
-  --parent-id baseline \
-  --config-path gdn_decode_qk4_v8_d128_k_last/config.toml \
-  --mode pack \
-  --kind variant \
-  --skip-prepare
-```
-
-`pack` mode verifies packaging but does not produce promotion-quality benchmark evidence. The gate normally blocks it from becoming a variant and archives it as failed evidence.
+For a cheap smoke test, use `--mode pack`. `pack` mode verifies packaging but does not produce promotion-quality benchmark evidence. The gate normally blocks it from becoming a variant and archives it as failed evidence.
 
 ### 7. Summarize campaign state
 
 ```bash
 python -m aai_harness.cli summarize-campaign \
-  --campaign-id campaign-20260707T172000+0900
+  --campaign-id campaign-demo
 ```
 
 This scans all child `round_report.json` files and writes:
@@ -243,7 +242,7 @@ The summary includes child counts, gate pass counts, archived variants, archived
 
 ```bash
 python -m aai_harness.cli update-campaign-memory \
-  --campaign-id campaign-20260707T172000+0900
+  --campaign-id campaign-demo
 ```
 
 This appends campaign findings into:
@@ -265,7 +264,7 @@ Use this when you want the next round to benefit from the previous round's failu
 
 ```bash
 python -m aai_harness.cli select-parent \
-  --definition gdn_decode_qk4_v8_d128_k_last
+  --definition <definition>
 ```
 
 This selects the best archived baseline/variant by the configured metric, defaulting to `avg_latency_ms`.
@@ -312,7 +311,7 @@ Use it as the main entrypoint for a new AAI campaign.
 
 ### `bootstrap`
 
-Creates immutable baseline evidence for the current repository solution.
+Creates immutable baseline evidence for the current target solution.
 
 ```bash
 python -m aai_harness.cli bootstrap \
@@ -581,9 +580,9 @@ The evaluator also mirrors command stdout/stderr into the existing child `logs/`
 
 The default archive gate checks for failed benchmark status, protected path edits, suspicious diff patterns, incomplete evidence, and evidence schema compatibility. Warnings are emitted for edits outside the default `solution/` scope. Errors block promotion as a variant.
 
-## Relationship to existing scripts
+## Relationship to evaluator scripts
 
-The existing scripts remain the evaluator source of truth:
+AAI keeps using these existing evaluator scripts as backends:
 
 - `scripts/pack_solution.py`
 - `scripts/run_local.py`
