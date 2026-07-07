@@ -14,6 +14,7 @@ Timestamp timezone: Asia/Tokyo.
 - Added `child_eval.json` report generation with command list, return codes, log paths, and artifact paths.
 - Added automatic stdout/stderr capture under each child `logs/` directory.
 - Connected evaluator output to `finalize_child_evidence`, so `run-child-eval` refreshes `diff.patch` and writes child `result.json` by default.
+- Updated archive gates to reject incomplete benchmark evidence such as `NO_BENCHMARK_RESULT`, `UNKNOWN`, and skipped local runs before variant promotion.
 - Updated CLI, README, and design plan documentation for the new child evaluation runner.
 
 ### Notes
